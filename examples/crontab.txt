@@ -1,0 +1,5 @@
+# Scheduled runs go through the same runner, so they show up in the web history
+# and are emailed like web runs. Edit with: crontab -e
+#
+# Mon/Wed/Fri at 07:00 (system timezone)
+0 7 * * 1,3,5  /usr/bin/env node $HOME/claude-runner-ui/bin/run-job.mjs auto "run the daily job" cron >> $HOME/claude-runner-ui/runs/cron.log 2>&1

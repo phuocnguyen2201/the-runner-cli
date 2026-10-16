@@ -1,0 +1,13 @@
+{
+  "name": "claude-runner-ui",
+  "version": "0.1.0",
+  "description": "Small web UI to start headless Claude Code jobs, keep a run history, and email results",
+  "type": "module",
+  "private": true,
+  "license": "MIT",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "node server.mjs",
+    "job": "node bin/run-job.mjs auto"
+  }
+}

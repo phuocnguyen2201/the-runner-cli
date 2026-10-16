@@ -1,0 +1,360 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claude Runner</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22%3E%3Crect width=%2232%22 height=%2232%22 rx=%228%22 fill=%22%23c2410c%22/%3E%3Cpath d=%22M12 9l11 7-11 7z%22 fill=%22white%22/%3E%3C/svg%3E">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
+<style>
+  :root {
+    --bg: #f6f5f2; --surface: #ffffff; --surface-2: #f0eee9; --border: #e2dfd8;
+    --text: #1f1e1c; --muted: #6b6862; --accent: #c2410c; --accent-text: #ffffff;
+    --ok: #15803d; --err: #b91c1c; --warn: #a16207; --run: #1d4ed8;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #161514; --surface: #1f1e1c; --surface-2: #2a2826; --border: #383532;
+      --text: #ece9e4; --muted: #a29e97; --accent: #f97316; --accent-text: #1a1a1a;
+      --ok: #4ade80; --err: #f87171; --warn: #facc15; --run: #60a5fa;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #161514; --surface: #1f1e1c; --surface-2: #2a2826; --border: #383532;
+    --text: #ece9e4; --muted: #a29e97; --accent: #f97316; --accent-text: #1a1a1a;
+    --ok: #4ade80; --err: #f87171; --warn: #facc15; --run: #60a5fa;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  main { max-width: 960px; margin: 0 auto; padding: 20px 16px 60px; }
+  header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+  h1 { font-size: 20px; margin: 0; }
+  h2 { font-size: 15px; margin: 0 0 10px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+  .muted { color: var(--muted); }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+  textarea {
+    width: 100%; min-height: 72px; resize: vertical; padding: 10px 12px; border-radius: 8px;
+    border: 1px solid var(--border); background: var(--bg); color: var(--text); font: inherit;
+  }
+  textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; }
+  .chip {
+    border: 1px solid var(--border); background: var(--surface-2); color: var(--text);
+    border-radius: 999px; padding: 4px 12px; font: inherit; font-size: 13px; cursor: pointer;
+  }
+  .chip:hover { border-color: var(--accent); }
+  button.primary {
+    margin-left: auto; background: var(--accent); color: var(--accent-text); border: 0;
+    border-radius: 8px; padding: 8px 18px; font: inherit; font-weight: 600; cursor: pointer;
+  }
+  button.primary:disabled { opacity: .5; cursor: not-allowed; }
+  button.ghost {
+    background: none; border: 1px solid var(--border); color: var(--text);
+    border-radius: 8px; padding: 6px 12px; font: inherit; font-size: 13px; cursor: pointer;
+  }
+  .error { color: var(--err); font-size: 13px; margin-top: 8px; min-height: 1em; }
+  .badge {
+    display: inline-block; font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 999px;
+    border: 1px solid currentColor; white-space: nowrap;
+  }
+  .s-done { color: var(--ok); } .s-failed, .s-timeout { color: var(--err); }
+  .s-cancelled, .s-busy { color: var(--warn); } .s-running, .s-queued { color: var(--run); }
+  .runs { list-style: none; margin: 0; padding: 0; }
+  .run {
+    display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; padding: 12px 4px;
+    border-top: 1px solid var(--border); cursor: pointer; text-decoration: none; color: inherit;
+  }
+  .run:first-child { border-top: 0; }
+  .run:hover { background: var(--surface-2); }
+  .run .req { font-weight: 600; overflow-wrap: anywhere; }
+  .run .when { font-size: 13px; color: var(--muted); text-align: right; white-space: nowrap; }
+  .run .src { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; font-size: 13px; }
+  .tag { background: var(--surface-2); border-radius: 6px; padding: 1px 8px; }
+  .tag.err { color: var(--err); } .tag.skip { color: var(--muted); }
+  pre.log {
+    background: var(--surface-2); border-radius: 8px; padding: 10px 12px; margin: 0;
+    font: 12px/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 420px; overflow: auto;
+  }
+  .live { border-color: var(--run); }
+  .live-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .result { overflow-wrap: anywhere; }
+  .result a { color: var(--accent); }
+  .result h1 { font-size: 20px; } .result h2 { font-size: 17px; text-transform: none; letter-spacing: 0; color: var(--text); margin-top: 20px; }
+  .result h3 { font-size: 15px; }
+  .result table { border-collapse: collapse; display: block; overflow-x: auto; }
+  .result th, .result td { border: 1px solid var(--border); padding: 4px 8px; }
+  table.sources { width: 100%; border-collapse: collapse; font-size: 14px; }
+  table.sources th { text-align: left; color: var(--muted); font-weight: 600; }
+  table.sources th, table.sources td { padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  .table-wrap { overflow-x: auto; }
+  dl.facts { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 0; font-size: 14px; }
+  dl.facts dt { color: var(--muted); }
+  dl.facts dd { margin: 0; overflow-wrap: anywhere; }
+  a.back { color: var(--accent); text-decoration: none; font-size: 14px; }
+  .empty { padding: 16px 4px; color: var(--muted); }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Claude Runner</h1>
+    <span class="muted" id="project"></span>
+  </header>
+
+  <section id="list-view">
+    <div class="card">
+      <h2>New job</h2>
+      <form id="form">
+        <textarea id="request" maxlength="500" placeholder="e.g. scan for today" required></textarea>
+        <div class="row" id="presets"></div>
+        <div class="row">
+          <span class="muted" id="hint"></span>
+          <button class="primary" id="start" type="submit">Start</button>
+        </div>
+        <div class="error" id="form-error"></div>
+      </form>
+    </div>
+
+    <div class="card live" id="live" hidden>
+      <div class="live-head">
+        <div><span class="badge s-running">running</span> <strong id="live-req"></strong></div>
+        <div class="row" style="margin:0">
+          <a class="back" id="live-open" href="#">Open</a>
+          <button class="ghost" id="live-cancel" type="button">Cancel</button>
+        </div>
+      </div>
+      <pre class="log" id="live-log"></pre>
+    </div>
+
+    <div class="card">
+      <h2>History</h2>
+      <ul class="runs" id="runs"></ul>
+    </div>
+  </section>
+
+  <section id="detail-view" hidden>
+    <p><a class="back" href="#">← All runs</a></p>
+    <div class="card">
+      <div class="live-head">
+        <strong id="d-req"></strong>
+        <span id="d-state"></span>
+      </div>
+      <dl class="facts" id="d-facts"></dl>
+      <div class="row" id="d-actions" hidden>
+        <button class="ghost" id="d-cancel" type="button">Cancel</button>
+      </div>
+    </div>
+    <div class="card" id="d-sources-card" hidden>
+      <h2>Sources</h2>
+      <div class="table-wrap"><table class="sources" id="d-sources"></table></div>
+    </div>
+    <div class="card" id="d-result-card" hidden>
+      <h2>Result</h2>
+      <div class="result" id="d-result"></div>
+    </div>
+    <div class="card">
+      <h2>Log</h2>
+      <pre class="log" id="d-log"></pre>
+    </div>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const ACTIVE = ['queued', 'running'];
+let timer = null;
+
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+async function api(path, opts = {}) {
+  const res = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...opts });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
+}
+
+function fmtDate(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return d.toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+}
+
+function fmtDuration(sec) {
+  if (sec == null) return '';
+  const m = Math.floor(sec / 60), s = sec % 60;
+  return m ? `${m}m ${s}s` : `${s}s`;
+}
+
+const badge = (state) => `<span class="badge s-${esc(state)}">${esc(state)}</span>`;
+
+function sourceTags(sources) {
+  if (!Array.isArray(sources) || !sources.length) return '';
+  return sources.map((s) => {
+    const cls = s.status === 'error' ? 'err' : s.status === 'skipped' ? 'skip' : '';
+    const mark = s.status === 'error' ? '✗' : s.status === 'skipped' ? '–' : '✓';
+    const kw = Array.isArray(s.keywords) && s.keywords.length ? ` · ${s.keywords.join(', ')}` : '';
+    const kept = s.kept != null ? ` · ${s.kept}` : '';
+    return `<span class="tag ${cls}">${mark} ${esc(s.platform)}${esc(kw)}${esc(kept)}</span>`;
+  }).join('');
+}
+
+// ── list view ──────────────────────────────────────────────────────────────
+
+async function loadConfig() {
+  const cfg = await api('/api/config');
+  $('project').textContent = cfg.project;
+  $('hint').textContent = `timeout ${cfg.timeout}${cfg.mail ? ' · result emailed' : ''}`;
+  $('presets').innerHTML = cfg.presets.map((p) => `<button type="button" class="chip">${esc(p)}</button>`).join('');
+  $('presets').querySelectorAll('.chip').forEach((b) => b.addEventListener('click', () => {
+    $('request').value = b.textContent;
+    $('request').focus();
+  }));
+}
+
+async function refreshList() {
+  const { active, runs } = await api('/api/runs');
+  $('start').disabled = Boolean(active);
+  $('runs').innerHTML = runs.length ? runs.map((r) => `
+    <li><a class="run" href="#/run/${esc(r.id)}">
+      <span class="req">${esc(r.summary || r.request || r.id)}</span>
+      <span class="when">${esc(fmtDate(r.startedAt || r.createdAt))}</span>
+      <span class="src">
+        ${badge(r.state)}
+        <span class="tag">${esc(r.trigger || 'web')}</span>
+        ${r.summary && r.request ? `<span class="tag">“${esc(r.request)}”</span>` : ''}
+        ${r.durationSec != null ? `<span class="tag">${esc(fmtDuration(r.durationSec))}</span>` : ''}
+        ${sourceTags(r.sources)}
+      </span>
+    </a></li>`).join('') : '<li class="empty">No runs yet.</li>';
+
+  if (active) {
+    const run = await api(`/api/runs/${active}`);
+    $('live').hidden = false;
+    $('live-req').textContent = run.request;
+    $('live-open').href = `#/run/${active}`;
+    $('live-cancel').onclick = () => cancel(active);
+    const log = $('live-log');
+    const atBottom = log.scrollTop + log.clientHeight >= log.scrollHeight - 20;
+    log.textContent = run.log.split('\n').slice(-40).join('\n') || 'Starting…';
+    if (atBottom) log.scrollTop = log.scrollHeight;
+  } else {
+    $('live').hidden = true;
+  }
+  return Boolean(active);
+}
+
+$('form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  $('form-error').textContent = '';
+  const request = $('request').value.trim();
+  if (!request) return;
+  $('start').disabled = true;
+  try {
+    await api('/api/runs', { method: 'POST', body: JSON.stringify({ request }) });
+    $('request').value = '';
+    setTimeout(route, 800);
+  } catch (err) {
+    $('form-error').textContent = err.message;
+    $('start').disabled = false;
+  }
+});
+
+async function cancel(id) {
+  if (!confirm('Cancel this run?')) return;
+  try {
+    await api(`/api/runs/${id}/cancel`, { method: 'POST' });
+  } catch (err) {
+    alert(err.message);
+  }
+  setTimeout(route, 1000);
+}
+
+// ── detail view ────────────────────────────────────────────────────────────
+
+function renderMarkdown(md) {
+  if (window.marked && window.DOMPurify) {
+    return DOMPurify.sanitize(marked.parse(md));
+  }
+  return `<pre class="log">${esc(md)}</pre>`;
+}
+
+async function refreshDetail(id) {
+  const r = await api(`/api/runs/${id}`);
+  $('d-req').textContent = r.request || id;
+  $('d-state').innerHTML = badge(r.state);
+  const facts = [
+    ['Started', fmtDate(r.startedAt || r.createdAt)],
+    ['Finished', fmtDate(r.finishedAt)],
+    ['Duration', fmtDuration(r.durationSec)],
+    ['Trigger', r.trigger],
+    ['Summary', r.meta?.summary],
+    ['Turns', r.turns],
+    ['Cost', r.costUsd != null ? `$${Number(r.costUsd).toFixed(2)}` : ''],
+    ['Reason', r.reason],
+  ].filter(([, v]) => v != null && v !== '');
+  $('d-facts').innerHTML = facts.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('');
+
+  const active = ACTIVE.includes(r.state);
+  $('d-actions').hidden = !active;
+  $('d-cancel').onclick = () => cancel(id);
+
+  const sources = r.meta?.sources;
+  $('d-sources-card').hidden = !(Array.isArray(sources) && sources.length);
+  if (!$('d-sources-card').hidden) {
+    $('d-sources').innerHTML = `<tr><th>Platform</th><th>Keywords</th><th>Location</th><th>Status</th><th>Found</th><th>Kept</th><th>Note</th></tr>` +
+      sources.map((s) => `<tr>
+        <td>${esc(s.platform)}</td>
+        <td>${esc((s.keywords || []).join(', '))}</td>
+        <td>${esc(s.location)}</td>
+        <td><span class="badge s-${s.status === 'ok' ? 'done' : s.status === 'error' ? 'failed' : 'cancelled'}">${esc(s.status || '?')}</span></td>
+        <td>${esc(s.found)}</td><td>${esc(s.kept)}</td><td>${esc(s.note)}</td>
+      </tr>`).join('');
+  }
+
+  $('d-result-card').hidden = !r.result;
+  if (r.result) $('d-result').innerHTML = renderMarkdown(r.result);
+
+  const log = $('d-log');
+  const atBottom = log.scrollTop + log.clientHeight >= log.scrollHeight - 20;
+  log.textContent = r.log || '(no log yet)';
+  if (atBottom || active) log.scrollTop = log.scrollHeight;
+  return active;
+}
+
+// ── routing + polling ──────────────────────────────────────────────────────
+
+async function route() {
+  clearTimeout(timer);
+  const m = location.hash.match(/^#\/run\/(\d{8}-\d{6})$/);
+  $('list-view').hidden = Boolean(m);
+  $('detail-view').hidden = !m;
+  let active = false;
+  try {
+    active = m ? await refreshDetail(m[1]) : await refreshList();
+  } catch (err) {
+    console.error(err);
+  }
+  timer = setTimeout(route, active ? 4000 : 30000);
+}
+
+if (window.DOMPurify) {
+  DOMPurify.addHook('afterSanitizeAttributes', (node) => {
+    if (node.tagName === 'A') { node.setAttribute('target', '_blank'); node.setAttribute('rel', 'noopener noreferrer'); }
+  });
+}
+window.addEventListener('hashchange', () => { window.scrollTo(0, 0); route(); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden) route(); });
+loadConfig().catch((err) => { $('form-error').textContent = err.message; });
+route();
+</script>
+</body>
+</html>

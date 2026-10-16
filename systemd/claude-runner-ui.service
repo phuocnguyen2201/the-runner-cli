@@ -1,0 +1,15 @@
+[Unit]
+Description=claude-runner-ui (web UI for headless Claude Code jobs)
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+WorkingDirectory=%h/claude-runner-ui
+ExecStart=/usr/bin/env node server.mjs
+Restart=on-failure
+RestartSec=10
+# Running jobs are detached children; don't kill them when the UI restarts.
+KillMode=process
+
+[Install]
+WantedBy=default.target

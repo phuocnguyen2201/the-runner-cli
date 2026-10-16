@@ -1,0 +1,18 @@
+{
+  "host": "auto",
+  "port": 8787,
+  "projectDir": "/home/pi/my-project",
+  "promptFile": "/home/pi/my-project/prompt.md",
+  "mcpConfig": null,
+  "allowedTools": "Read,Write,Edit,Glob,Grep,Bash(node *)",
+  "model": null,
+  "timeout": "90m",
+  "envFile": null,
+  "runsDir": "./runs",
+  "mail": {
+    "to": "you@example.com",
+    "from": null,
+    "command": "msmtp -t"
+  },
+  "presets": ["run the daily job"]
+}
