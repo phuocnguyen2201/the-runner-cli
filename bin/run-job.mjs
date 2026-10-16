@@ -19,6 +19,7 @@ import {
   loadConfig, parseDuration, newRunId, runDir, readJson, updateStatus,
   acquireLock, releaseLock, ROOT,
 } from '../lib/config.mjs';
+import { markdownToHtml, emailDocument } from '../lib/markdown.mjs';
 
 const [, , idArg = 'auto', requestArg = '', trigger = 'cli'] = process.argv;
 
@@ -235,17 +236,55 @@ function sendMail(status) {
     : `[runner] ${status.state.toUpperCase()}: ${request} — ${date}`;
   const body = ok
     ? readFileSync(resultPath, 'utf8')
-    : `The job did not finish successfully (${status.reason}).\n\nRequest: ${request}\nRun: ${id}\n\n--- last 60 log lines ---\n${tail(join(dir, 'claude.log'), 60)}\n`;
-  const message = [
+    : [
+        `# Job ${status.state}`,
+        '',
+        `**Reason:** ${status.reason}`,
+        '',
+        `**Request:** ${request}`,
+        '',
+        `**Run:** ${id}`,
+        '',
+        '## Last 60 log lines',
+        '',
+        '```',
+        tail(join(dir, 'claude.log'), 60),
+        '```',
+        '',
+      ].join('\n');
+
+  const b64 = (s) => Buffer.from(s).toString('base64').replace(/.{76}/g, '$&\n');
+  const headers = [
     `To: ${mail.to}`,
     ...(mail.from ? [`From: ${mail.from}`] : []),
     `Subject: =?UTF-8?B?${Buffer.from(subject).toString('base64')}?=`,
+    `Date: ${new Date().toUTCString()}`,
     'MIME-Version: 1.0',
-    'Content-Type: text/plain; charset=UTF-8',
-    'Content-Transfer-Encoding: 8bit',
-    '',
-    body,
-  ].join('\n');
+  ];
+  let message;
+  if (mail.format === 'text') {
+    message = [...headers, 'Content-Type: text/plain; charset=UTF-8', 'Content-Transfer-Encoding: base64', '', b64(body)].join('\n');
+  } else {
+    const boundary = `runner-${id}-${Math.random().toString(36).slice(2)}`;
+    const html = emailDocument(markdownToHtml(body), { title: subject, footer: `Run ${id} · ${trigger} · ${request}` });
+    message = [
+      ...headers,
+      `Content-Type: multipart/alternative; boundary="${boundary}"`,
+      '',
+      `--${boundary}`,
+      'Content-Type: text/plain; charset=UTF-8',
+      'Content-Transfer-Encoding: base64',
+      '',
+      b64(body),
+      `--${boundary}`,
+      'Content-Type: text/html; charset=UTF-8',
+      'Content-Transfer-Encoding: base64',
+      '',
+      b64(html),
+      `--${boundary}--`,
+      '',
+    ].join('\n');
+  }
 
   return new Promise((resolvePromise, reject) => {
     const p = spawn('sh', ['-c', mail.command], { cwd: ROOT, stdio: ['pipe', 'ignore', 'pipe'] });
