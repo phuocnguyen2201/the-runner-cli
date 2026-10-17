@@ -5,6 +5,7 @@ A small web UI for running **headless Claude Code jobs** on an always-on Linux b
 - Type a request ("run the daily job", "only check source X") and press Start. The job runs on the server, so you can close the browser.
 - Watch a live log while it runs. Cancel it if needed.
 - A **Rules** page lets you edit the prompt and rule files (allowlisted in config) without starting a job. Each save keeps the previous version, and a save is refused if the file changed on disk since you opened it.
+- **Item actions:** when a run lists individual results (e.g. jobs found), each one gets buttons from your config. A button can run a command (with an optional note dialog) or start a follow-up Claude job for that item, such as "evaluate this one". Follow-up jobs queue behind the running job, and their result opens in a large dialog.
 - Every run is kept in a **history**: date, request, trigger (web/cron/cli), status, duration and cost. It also lists the **platforms and keywords** Claude used, from `meta.json`.
 - Each finished run is **emailed** through any sendmail-compatible command, e.g. `msmtp`.
 - Cron jobs use the same runner, so scheduled runs show up in the same history.
@@ -32,6 +33,8 @@ examples/crontab.txt  scheduled runs
    - `meta.json` (optional), which feeds the platforms/keywords columns:
      ```json
      {"summary": "3 new items",
+      "badge": "optional short verdict, e.g. 4.2/5",
+      "items": [{"title": "…", "url": "https://…", "company": "…", "location": "…"}],
       "sources": [{"platform": "Site A", "keywords": ["foo", "bar"], "location": "Finland",
                    "status": "ok", "found": 12, "kept": 3, "note": ""}]}
      ```
@@ -103,8 +106,35 @@ printf "Subject: test\n\nhi" | msmtp you@gmail.com
 | `runsDir` | Where run history is stored. Default `./runs`. |
 | `mail` | `{ "to", "from", "command" }`. The command reads a full message on stdin (`msmtp -t`). Set it to `null` to disable email. Cancelled runs are not emailed. |
 | `presets` | Quick-pick request chips shown in the UI. |
+| `items.label` | Heading for the per-item list on a run page (e.g. `"Jobs found"`). |
+| `itemActions` | Buttons shown on each item. See [Item actions](#item-actions). |
 
 Relative paths are resolved from the repo folder. Set `RUNNER_CONFIG=/path/to/config.json` to use a different config file.
+
+## Item actions
+
+When Claude lists `items` in `meta.json`, the run page shows them with one button per entry in `itemActions`:
+
+```json
+"items": { "label": "Jobs found" },
+"itemActions": [
+  { "id": "applied", "type": "command", "label": "Applied", "doneLabel": "Applied ✓", "askNote": true,
+    "command": ["node", "scripts/mark-applied.mjs"] },
+  { "id": "evaluate", "type": "job", "label": "Evaluate", "runningLabel": "Evaluating…", "doneLabel": "Evaluated",
+    "promptFile": "prompts/evaluate.md", "request": "Evaluate: {title} at {company}. URL: {url}" }
+]
+```
+
+- **`command`** runs the program in `projectDir`, with no shell and a 60-second limit.
+  - It receives `{"item": {...}, "note": "...", "date": "YYYY-MM-DD", "action": "<id>"}` as JSON on stdin.
+  - Exit code 0 marks the item done. Anything else shows the output as an error and offers a retry.
+  - With `askNote`, a dialog asks for a date and a note first.
+- **`job`** starts a normal runner job: the same history, log and email, with trigger `action:<id>`.
+  - `request` is filled from the item's fields (`{title}`, `{url}`, …), and `promptFile` (relative to `projectDir`) replaces the default prompt.
+  - These jobs **queue**. If another job is running they wait, first in first out, and start automatically.
+  - The button shows Queued…, then the `runningLabel`, then the `doneLabel` plus the job's `badge`. Clicking it after it's done opens the result in a large dialog.
+- Item data always comes from the run's `meta.json` on the server; the browser only sends the item's position in the list.
+- Item state is kept in `runs/items.json`, keyed by the item's URL. A job found again in a later run keeps its Applied/Evaluated state.
 
 ## Run it as a service
 

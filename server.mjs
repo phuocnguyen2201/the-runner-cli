@@ -5,19 +5,29 @@
 import { createServer } from 'node:http';
 import { spawn, execFileSync } from 'node:child_process';
 import { readFileSync, readdirSync, existsSync, statSync, openSync, readSync, closeSync, mkdirSync } from 'node:fs';
-import { join, basename } from 'node:path';
+import { join, basename, isAbsolute, resolve } from 'node:path';
 import {
   ROOT, RUN_ID_RE, loadConfig, newRunId, runDir, readJson, updateStatus, isAlive, activeLock,
 } from './lib/config.mjs';
 import { editableFiles, fileGroups, fileInfo, readEditable, saveEditable, readVersion } from './lib/files.mjs';
+import {
+  itemActions, publicActions, itemKey, cleanItem, fillTemplate, readStore, updateItemState, runCommandAction,
+} from './lib/items.mjs';
 
 const cfg = loadConfig();
 const host = resolveHost(cfg.host);
 const INDEX = join(ROOT, 'public', 'index.html');
 const MAX_REQUEST = 500;
 let startingId = null; // run spawned by this server that may not hold the lock yet
+let lastSpawnedId = null;
 
 recoverStaleRuns();
+for (const a of itemActions(cfg)) {
+  if (a.type === 'job' && a.promptFile) {
+    const p = isAbsolute(a.promptFile) ? a.promptFile : resolve(cfg.projectDir, a.promptFile);
+    if (!existsSync(p)) console.warn(`⚠️  itemActions "${a.id}": promptFile not found: ${p}`);
+  }
+}
 
 const server = createServer(async (req, res) => {
   try {
@@ -34,6 +44,8 @@ const server = createServer(async (req, res) => {
         mail: Boolean(cfg.mail?.to),
         timeout: cfg.timeout,
         groups: fileGroups(cfg),
+        itemsLabel: cfg.items?.label || 'Items',
+        itemActions: publicActions(cfg),
       });
     }
     if (req.method === 'GET' && path === '/api/files') {
@@ -56,6 +68,9 @@ const server = createServer(async (req, res) => {
     if (req.method === 'POST' && path === '/api/runs') {
       return startRun(req, res);
     }
+
+    const a = path.match(/^\/api\/runs\/(\d{8}-\d{6})\/items\/(\d+)\/actions\/([\w-]+)$/);
+    if (a && req.method === 'POST') return itemAction(req, res, a[1], Number(a[2]), a[3]);
 
     const m = path.match(/^\/api\/runs\/([^/]+)(\/cancel)?$/);
     if (m && RUN_ID_RE.test(m[1])) {
@@ -87,23 +102,88 @@ async function startRun(req, res) {
   if (!request) return json(res, 400, { error: 'request is required' });
   if (request.length > MAX_REQUEST) return json(res, 400, { error: `request is longer than ${MAX_REQUEST} characters` });
 
+  startingId = spawnJob(request, 'web');
+  json(res, 202, { id: startingId });
+}
+
+// Detached + argv array: survives the browser and server going away, no shell parsing of the request.
+function spawnJob(request, trigger, opts = null) {
   let id = newRunId();
-  while (existsSync(runDir(cfg, id))) id = newRunId(new Date(Date.now() + 1000));
+  while (existsSync(runDir(cfg, id)) || id === lastSpawnedId) id = newRunId(new Date(Date.now() + 1000));
+  lastSpawnedId = id;
   const dir = runDir(cfg, id);
   mkdirSync(dir, { recursive: true });
-  updateStatus(dir, { id, request, trigger: 'web', state: 'queued', createdAt: new Date().toISOString() });
-
-  // Detached + argv array: survives the browser and server going away, no shell parsing of the request.
-  const child = spawn(process.execPath, [join(ROOT, 'bin', 'run-job.mjs'), id, request, 'web'], {
+  updateStatus(dir, { id, request, trigger, state: 'queued', waiting: Boolean(opts?.queue), createdAt: new Date().toISOString() });
+  const child = spawn(process.execPath, [join(ROOT, 'bin', 'run-job.mjs'), id, request, trigger], {
     cwd: ROOT,
     detached: true,
     stdio: 'ignore',
-    env: process.env,
+    env: opts ? { ...process.env, RUNNER_JOB_OPTS: JSON.stringify(opts) } : process.env,
   });
   child.unref();
   updateStatus(dir, { pid: child.pid });
-  startingId = id;
-  json(res, 202, { id });
+  return id;
+}
+
+async function itemAction(req, res, runId, index, actionId) {
+  const dir = runDir(cfg, runId);
+  const action = itemActions(cfg).find((x) => x.id === actionId);
+  const raw = readJson(join(dir, 'meta.json'), {})?.items?.[index];
+  if (!existsSync(dir) || !action || !raw) return json(res, 404, { error: 'item or action not found' });
+
+  // The item always comes from the run's meta.json on disk, never from the browser.
+  const item = cleanItem(raw);
+  const key = itemKey(item);
+  const body = await readBody(req);
+
+  if (action.type === 'command') {
+    const date = /^\d{4}-\d{2}-\d{2}$/.test(body.date || '') ? body.date : new Date().toISOString().slice(0, 10);
+    const note = String(body.note ?? '').slice(0, 2000);
+    const result = await runCommandAction(cfg, action, { item, note, date, action: action.id });
+    const state = updateItemState(cfg, key, action.id, {
+      state: result.ok ? 'done' : 'failed', at: new Date().toISOString(), date, note, output: result.output,
+    });
+    return json(res, result.ok ? 200 : 500, { ...state[action.id], error: result.ok ? undefined : `Action failed: ${result.output || `exit ${result.code}`}` });
+  }
+
+  // type "job": reuse a queued/running job for this item instead of starting a duplicate
+  const linked = readStore(cfg)[key]?.[action.id];
+  if (linked?.runId) {
+    const st = jobState(linked.runId);
+    if (['queued', 'running'].includes(st.state)) return json(res, 200, st);
+  }
+  const request = fillTemplate(action.request || `${action.label}: {title} {url}`, item);
+  const runIdNew = spawnJob(request, `action:${action.id}`, {
+    queue: true, action: action.id, itemKey: key, promptFile: action.promptFile || null,
+  });
+  updateItemState(cfg, key, action.id, { runId: runIdNew, at: new Date().toISOString() });
+  json(res, 202, jobState(runIdNew));
+}
+
+function jobState(runId) {
+  const dir = runDir(cfg, runId);
+  const status = checkStale(dir, readJson(join(dir, 'status.json'), {}));
+  const meta = readJson(join(dir, 'meta.json'), null);
+  return { runId, state: status.state || 'unknown', badge: meta?.badge ?? null, summary: meta?.summary ?? null };
+}
+
+// Items of a run with the state of each action.
+function runItems(dir) {
+  const items = readJson(join(dir, 'meta.json'), {})?.items;
+  if (!Array.isArray(items)) return [];
+  const store = readStore(cfg);
+  const actions = itemActions(cfg);
+  return items.map((raw, index) => {
+    const item = cleanItem(raw);
+    const key = itemKey(item);
+    const saved = store[key] || {};
+    const states = {};
+    for (const a of actions) {
+      if (a.type === 'job') states[a.id] = saved[a.id]?.runId ? jobState(saved[a.id].runId) : null;
+      else states[a.id] = saved[a.id] ? { state: saved[a.id].state, at: saved[a.id].at, date: saved[a.id].date, note: saved[a.id].note } : null;
+    }
+    return { index, item, states };
+  });
 }
 
 function cancelRun(res, dir) {
@@ -148,6 +228,7 @@ function runDetail(id, dir) {
     ...status,
     id,
     meta: readJson(join(dir, 'meta.json'), null),
+    items: runItems(dir),
     result: readText(join(dir, 'result.md')),
     log: tailFile(join(dir, 'claude.log'), 200),
   };

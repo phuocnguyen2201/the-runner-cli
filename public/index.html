@@ -91,6 +91,8 @@
   .result h3 { font-size: 15px; }
   .result table { border-collapse: collapse; display: block; overflow-x: auto; }
   .result th, .result td { border: 1px solid var(--border); padding: 4px 8px; }
+  .result th, .result td { overflow-wrap: normal; word-break: normal; min-width: 5.5em; }
+  .result td:first-child, .result th:first-child { min-width: 0; }
   table.sources { width: 100%; border-collapse: collapse; font-size: 14px; }
   table.sources th { text-align: left; color: var(--muted); font-weight: 600; }
   table.sources th, table.sources td { padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
@@ -102,7 +104,7 @@
   .empty { padding: 16px 4px; color: var(--muted); }
   [hidden] { display: none !important; }
   header { flex-wrap: wrap; align-items: center; }
-  h1 { white-space: nowrap; }
+  header h1 { white-space: nowrap; }
   button.ghost:disabled { opacity: .45; cursor: default; }
   nav.tabs { overflow-x: auto; max-width: 100%; display: flex; gap: 4px; background: var(--surface-2); border-radius: 10px; padding: 3px; }
   nav.tabs a { padding: 5px 14px; border-radius: 8px; color: var(--muted); text-decoration: none; font-size: 14px; font-weight: 600; }
@@ -122,6 +124,35 @@
   .note { font-size: 13px; padding: 8px 12px; border-radius: 8px; margin-bottom: 10px; background: var(--surface-2); }
   .note.warn { color: var(--warn); } .note.err { color: var(--err); } .note.ok { color: var(--ok); }
   .dirty { color: var(--warn); font-size: 13px; font-weight: 600; }
+  .items { list-style: none; margin: 0; padding: 0; }
+  .item { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; padding: 12px 2px; border-top: 1px solid var(--border); }
+  .item:first-child { border-top: 0; }
+  .item .info { flex: 1 1 260px; min-width: 0; }
+  .item .title { font-weight: 600; color: var(--text); overflow-wrap: anywhere; }
+  .item a.title { color: var(--accent); }
+  .item .company { color: var(--muted); font-size: 14px; }
+  .item .fields { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; font-size: 12px; }
+  .item .acts { display: flex; gap: 6px; flex-wrap: wrap; }
+  button.act { border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: 8px; padding: 6px 12px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+  button.act:hover { border-color: var(--accent); }
+  button.act.done { color: var(--ok); border-color: currentColor; }
+  button.act.busy { color: var(--run); border-color: currentColor; cursor: progress; }
+  button.act.failed { color: var(--err); border-color: currentColor; }
+  dialog { border: 1px solid var(--border); border-radius: 14px; padding: 0; background: var(--surface); color: var(--text); width: min(520px, calc(100vw - 32px)); max-height: calc(100vh - 32px); }
+  dialog::backdrop { background: rgba(0, 0, 0, .45); }
+  dialog .dlg-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 16px 18px 8px; }
+  dialog .dlg-head h3 { margin: 0; font-size: 17px; overflow-wrap: anywhere; }
+  dialog .dlg-body { padding: 8px 18px 16px; overflow: auto; }
+  dialog .dlg-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 0 18px 16px; }
+  dialog label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 4px; }
+  dialog input[type=date] { font: inherit; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); }
+  dialog.big { width: min(1000px, calc(100vw - 32px)); height: calc(100vh - 48px); }
+  dialog.big[open] { display: flex; flex-direction: column; }
+  dialog.big .dlg-body { flex: 1; border-top: 1px solid var(--border); padding-top: 12px; }
+  button.x { background: none; border: 0; color: var(--muted); font-size: 22px; line-height: 1; cursor: pointer; padding: 0 4px; }
+  @media (max-width: 600px) {
+    dialog.big { width: 100vw; height: 100vh; max-width: 100vw; max-height: 100vh; border-radius: 0; margin: 0; }
+  }
 </style>
 </head>
 <body>
@@ -179,6 +210,10 @@
         <button class="ghost" id="d-cancel" type="button">Cancel</button>
       </div>
     </div>
+    <div class="card" id="d-items-card" hidden>
+      <h2 id="d-items-title">Items</h2>
+      <ul class="items" id="d-items"></ul>
+    </div>
     <div class="card" id="d-sources-card" hidden>
       <h2>Sources</h2>
       <div class="table-wrap"><table class="sources" id="d-sources"></table></div>
@@ -218,6 +253,40 @@
     </div>
   </section>
 </main>
+
+<dialog id="note-dialog">
+  <form method="dialog" id="note-form">
+    <div class="dlg-head"><h3 id="note-title"></h3><button class="x" value="cancel" aria-label="Close">×</button></div>
+    <div class="dlg-body">
+      <div class="muted" id="note-sub" style="font-size:14px"></div>
+      <label for="note-date">Date</label>
+      <input type="date" id="note-date" required>
+      <label for="note-text">Note</label>
+      <textarea id="note-text" maxlength="2000" placeholder="e.g. applied via company site, cover letter v2, contact: …"></textarea>
+      <div class="error" id="note-error"></div>
+    </div>
+    <div class="dlg-foot">
+      <button class="ghost" value="cancel" formnovalidate>Cancel</button>
+      <button class="primary" style="margin:0" value="save" id="note-save">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="info-dialog">
+  <div class="dlg-head"><h3 id="info-title"></h3><button class="x" onclick="this.closest('dialog').close()" aria-label="Close">×</button></div>
+  <div class="dlg-body" id="info-body"></div>
+</dialog>
+
+<dialog id="big-dialog" class="big">
+  <div class="dlg-head">
+    <div>
+      <h3 id="big-title"></h3>
+      <div class="row" style="margin-top:6px" id="big-meta"></div>
+    </div>
+    <button class="x" onclick="this.closest('dialog').close()" aria-label="Close">×</button>
+  </div>
+  <div class="dlg-body result" id="big-body"></div>
+</dialog>
 
 <script>
 const $ = (id) => document.getElementById(id);
@@ -260,8 +329,11 @@ function sourceTags(sources) {
 
 // ── list view ──────────────────────────────────────────────────────────────
 
+let appCfg = { itemActions: [], itemsLabel: 'Items' };
+
 async function loadConfig() {
   const cfg = await api('/api/config');
+  appCfg = cfg;
   for (const g of cfg.groups || []) {
     const a = document.createElement('a');
     a.href = `#/edit/${g.slug}`;
@@ -366,6 +438,8 @@ async function refreshDetail(id) {
   $('d-actions').hidden = !active;
   $('d-cancel').onclick = () => cancel(id);
 
+  const itemsBusy = renderItems(id, r.items || []);
+
   const sources = r.meta?.sources;
   $('d-sources-card').hidden = !(Array.isArray(sources) && sources.length);
   if (!$('d-sources-card').hidden) {
@@ -386,7 +460,133 @@ async function refreshDetail(id) {
   const atBottom = log.scrollTop + log.clientHeight >= log.scrollHeight - 20;
   log.textContent = r.log || '(no log yet)';
   if (atBottom || active) log.scrollTop = log.scrollHeight;
-  return active;
+  return active || itemsBusy;
+}
+
+// ── items + actions ────────────────────────────────────────────────────────
+
+const ITEM_SKIP = new Set(['title', 'url', 'company']);
+const FAILED = ['failed', 'cancelled', 'timeout', 'busy', 'unknown'];
+let itemsCtx = { runId: null, items: [] };
+
+function actionButton(action, st, idx) {
+  let cls = '', label = action.label;
+  if (action.type === 'job') {
+    if (st && ACTIVE.includes(st.state)) { cls = 'busy'; label = st.state === 'queued' ? 'Queued…' : action.runningLabel; }
+    else if (st?.state === 'done') { cls = 'done'; label = st.badge ? `${action.doneLabel} · ${st.badge}` : action.doneLabel; }
+    else if (st && FAILED.includes(st.state)) { cls = 'failed'; label = `${action.label} (retry)`; }
+  } else if (st?.state === 'done') { cls = 'done'; label = action.doneLabel; }
+  else if (st?.state === 'failed') { cls = 'failed'; label = `${action.label} (retry)`; }
+  return `<button type="button" class="act ${cls}" data-idx="${idx}" data-action="${esc(action.id)}">${esc(label)}</button>`;
+}
+
+function renderItems(runId, items) {
+  itemsCtx = { runId, items };
+  $('d-items-card').hidden = !items.length;
+  $('d-items-title').textContent = `${appCfg.itemsLabel || 'Items'} (${items.length})`;
+  let busy = false;
+  $('d-items').innerHTML = items.map(({ index, item, states }) => {
+    const fields = Object.entries(item).filter(([k, v]) => !ITEM_SKIP.has(k) && v);
+    const title = item.url
+      ? `<a class="title" href="${esc(item.url)}" target="_blank" rel="noopener noreferrer">${esc(item.title || item.url)}</a>`
+      : `<span class="title">${esc(item.title || '(untitled)')}</span>`;
+    const acts = (appCfg.itemActions || []).map((a) => {
+      const st = states?.[a.id];
+      if (a.type === 'job' && st && ACTIVE.includes(st.state)) busy = true;
+      return actionButton(a, st, index);
+    }).join('');
+    return `<li class="item">
+      <div class="info">${title}${item.company ? ` <span class="company">· ${esc(item.company)}</span>` : ''}
+        ${fields.length ? `<div class="fields">${fields.map(([k, v]) => `<span class="tag" title="${esc(k)}">${esc(v)}</span>`).join('')}</div>` : ''}
+      </div>
+      <div class="acts">${acts}</div>
+    </li>`;
+  }).join('');
+  return busy;
+}
+
+$('d-items').addEventListener('click', async (e) => {
+  const btn = e.target.closest('button.act');
+  if (!btn) return;
+  const idx = Number(btn.dataset.idx);
+  const action = (appCfg.itemActions || []).find((a) => a.id === btn.dataset.action);
+  const entry = itemsCtx.items.find((x) => x.index === idx);
+  if (!action || !entry) return;
+  const st = entry.states?.[action.id];
+
+  if (action.type === 'job') {
+    if (st && ACTIVE.includes(st.state)) return openRunInfo(action, st);
+    if (st?.state === 'done') return openResultDialog(entry.item, st);
+    return runItemAction(idx, action, {});
+  }
+  if (st?.state === 'done') return openNoteInfo(action, entry.item, st);
+  if (action.askNote) return openNoteDialog(idx, action, entry.item);
+  if (confirm(`${action.label}: ${entry.item.title || ''}?`)) runItemAction(idx, action, {});
+});
+
+async function runItemAction(idx, action, body) {
+  try {
+    await api(`/api/runs/${itemsCtx.runId}/items/${idx}/actions/${action.id}`, { method: 'POST', body: JSON.stringify(body) });
+    return true;
+  } catch (err) {
+    alert(err.message);
+    return false;
+  } finally {
+    route();
+  }
+}
+
+function openNoteDialog(idx, action, item) {
+  const dlg = $('note-dialog');
+  $('note-title').textContent = action.label;
+  $('note-sub').textContent = [item.title, item.company].filter(Boolean).join(' · ');
+  $('note-date').value = new Date().toISOString().slice(0, 10);
+  $('note-text').value = '';
+  $('note-error').textContent = '';
+  dlg.returnValue = '';
+  dlg.onclose = async () => {
+    if (dlg.returnValue !== 'save') return;
+    await runItemAction(idx, action, { note: $('note-text').value.trim(), date: $('note-date').value });
+  };
+  dlg.showModal();
+  $('note-text').focus();
+}
+
+function openNoteInfo(action, item, st) {
+  $('info-title').textContent = `${action.doneLabel}`;
+  $('info-body').innerHTML = `
+    <p style="margin:0 0 8px;font-weight:600">${esc([item.title, item.company].filter(Boolean).join(' · '))}</p>
+    <dl class="facts">
+      <dt>Date</dt><dd>${esc(st.date || fmtDate(st.at))}</dd>
+      <dt>Recorded</dt><dd>${esc(fmtDate(st.at))}</dd>
+      <dt>Note</dt><dd>${esc(st.note || '—')}</dd>
+    </dl>`;
+  $('info-dialog').showModal();
+}
+
+function openRunInfo(action, st) {
+  $('info-title').textContent = st.state === 'queued' ? 'Queued' : action.runningLabel;
+  $('info-body').innerHTML = `<p style="margin:0 0 12px">${st.state === 'queued'
+    ? 'Waiting for the current job to finish. It starts automatically.'
+    : 'This job is running now.'}</p><a class="back" href="#/run/${esc(st.runId)}" onclick="this.closest('dialog').close()">Open its run page →</a>`;
+  $('info-dialog').showModal();
+}
+
+async function openResultDialog(item, st) {
+  const dlg = $('big-dialog');
+  $('big-title').textContent = [item.title, item.company].filter(Boolean).join(' · ');
+  $('big-meta').innerHTML = `${st.badge ? `<span class="badge s-done">${esc(st.badge)}</span>` : ''}
+    ${st.summary ? `<span class="muted" style="font-size:14px">${esc(st.summary)}</span>` : ''}
+    <a class="back" href="#/run/${esc(st.runId)}" onclick="this.closest('dialog').close()">Open run →</a>`;
+  $('big-body').innerHTML = '<p class="muted">Loading…</p>';
+  dlg.showModal();
+  try {
+    const r = await api(`/api/runs/${st.runId}`);
+    $('big-body').innerHTML = r.result ? renderMarkdown(r.result) : '<p class="muted">No result was written.</p>';
+    $('big-body').scrollTop = 0;
+  } catch (err) {
+    $('big-body').innerHTML = `<p class="error">${esc(err.message)}</p>`;
+  }
 }
 
 
@@ -556,8 +756,7 @@ window.addEventListener('hashchange', () => {
   route();
 });
 document.addEventListener('visibilitychange', () => { if (!document.hidden && $('rules-view').hidden) route(); });
-loadConfig().catch((err) => { $('form-error').textContent = err.message; });
-route();
+loadConfig().catch((err) => { $('form-error').textContent = err.message; }).finally(route);
 </script>
 </body>
 </html>

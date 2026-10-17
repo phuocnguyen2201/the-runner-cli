@@ -31,5 +31,30 @@
   },
   "presets": [
     "run the daily job"
+  ],
+  "items": {
+    "label": "Results"
+  },
+  "itemActions": [
+    {
+      "id": "done",
+      "type": "command",
+      "label": "Mark done",
+      "doneLabel": "Done ✓",
+      "askNote": true,
+      "command": [
+        "node",
+        "scripts/mark-done.mjs"
+      ]
+    },
+    {
+      "id": "analyze",
+      "type": "job",
+      "label": "Analyze",
+      "runningLabel": "Analyzing…",
+      "doneLabel": "Analyzed",
+      "promptFile": "analyze-prompt.md",
+      "request": "Analyze this item: {title} — {url}"
+    }
   ]
 }

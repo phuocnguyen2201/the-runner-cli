@@ -1,7 +1,11 @@
 #!/usr/bin/env node
 // Run one headless Claude Code job and record it in runs/<id>/.
 //
-// Usage: node bin/run-job.mjs <run-id|auto> "<request>" [web|cron|cli]
+// Usage: node bin/run-job.mjs <run-id|auto> "<request>" [web|cron|cli|action:<id>]
+//
+// Optional env RUNNER_JOB_OPTS (JSON, set by the server for item actions):
+//   { "promptFile": "path", "queue": true, "action": "evaluate", "itemKey": "..." }
+//   queue: wait for the running job to finish instead of exiting as "busy".
 //
 // Files written to runs/<id>/:
 //   status.json   state, timings, exit code, cost   (written by this script)
@@ -13,12 +17,13 @@
 
 import { spawn } from 'node:child_process';
 import { readFileSync, writeFileSync, existsSync, mkdirSync, createWriteStream } from 'node:fs';
-import { join } from 'node:path';
+import { join, isAbsolute, resolve } from 'node:path';
 import { homedir } from 'node:os';
 import {
   loadConfig, parseDuration, newRunId, runDir, readJson, updateStatus,
-  acquireLock, releaseLock, ROOT,
+  acquireLock, releaseLock, ROOT, RUN_ID_RE, isAlive,
 } from '../lib/config.mjs';
+import { readdirSync } from 'node:fs';
 import { markdownToHtml, emailDocument } from '../lib/markdown.mjs';
 
 const [, , idArg = 'auto', requestArg = '', trigger = 'cli'] = process.argv;
@@ -38,15 +43,35 @@ const id = idArg === 'auto' ? newRunId() : idArg;
 const dir = runDir(cfg, id);
 mkdirSync(dir, { recursive: true });
 
+const opts = readJobOpts();
+const promptFile = opts.promptFile
+  ? (isAbsolute(opts.promptFile) ? opts.promptFile : resolve(cfg.projectDir, opts.promptFile))
+  : cfg.promptFile;
+
 const request = (requestArg || (cfg.presets[0] ?? 'run')).slice(0, 500);
 writeFileSync(join(dir, 'request.txt'), request + '\n');
-updateStatus(dir, { id, request, trigger, state: 'queued', createdAt: new Date().toISOString() });
+updateStatus(dir, {
+  id, request, trigger, state: 'queued', pid: process.pid, waiting: Boolean(opts.queue),
+  action: opts.action ?? null, itemKey: opts.itemKey ?? null, createdAt: new Date().toISOString(),
+});
 
-if (!acquireLock(cfg, id)) {
-  updateStatus(dir, { state: 'busy', finishedAt: new Date().toISOString(), reason: 'another job was already running' });
-  console.error('Another job is running; skipped.');
+let cancelledWhileQueued = false;
+const onQueuedSignal = () => { cancelledWhileQueued = true; };
+process.on('SIGTERM', onQueuedSignal);
+process.on('SIGINT', onQueuedSignal);
+
+if (!(await waitForLock())) {
+  const cancelled = cancelledWhileQueued;
+  updateStatus(dir, {
+    state: cancelled ? 'cancelled' : 'busy',
+    finishedAt: new Date().toISOString(),
+    reason: cancelled ? 'cancelled while queued' : 'another job was already running',
+  });
+  console.error(cancelled ? 'Cancelled while queued.' : 'Another job is running; skipped.');
   process.exit(2);
 }
+process.off('SIGTERM', onQueuedSignal);
+process.off('SIGINT', onQueuedSignal);
 
 const resultPath = join(dir, 'result.md');
 const metaPath = join(dir, 'meta.json');
@@ -137,8 +162,34 @@ child.on('close', async (code) => {
 
 // ── helpers ────────────────────────────────────────────────────────────────
 
+function readJobOpts() {
+  try {
+    return JSON.parse(process.env.RUNNER_JOB_OPTS || '{}');
+  } catch {
+    return {};
+  }
+}
+
+// Take the single-job lock. With opts.queue, wait first-in-first-out behind other waiting runs.
+async function waitForLock() {
+  if (!opts.queue) return acquireLock(cfg, id);
+  for (;;) {
+    if (cancelledWhileQueued) return false;
+    if (!olderWaiterExists() && acquireLock(cfg, id)) return true;
+    await new Promise((r) => setTimeout(r, 3000));
+  }
+}
+
+function olderWaiterExists() {
+  return readdirSync(cfg.runsDir).some((name) => {
+    if (!RUN_ID_RE.test(name) || name >= id) return false;
+    const st = readJson(join(cfg.runsDir, name, 'status.json'), {});
+    return st.state === 'queued' && st.waiting && isAlive(st.pid);
+  });
+}
+
 function buildPrompt() {
-  const base = cfg.promptFile ? readFileSync(cfg.promptFile, 'utf8') : '';
+  const base = promptFile ? readFileSync(promptFile, 'utf8') : '';
   return `${base}
 
 ---
@@ -160,9 +211,14 @@ You are running unattended from a job runner. Nobody can answer questions.
   META_PATH: ${metaPath}
   Shape:
   {"summary": "one line",
+   "badge": "optional very short verdict, e.g. a score like 4.2/5",
    "sources": [{"platform": "name", "keywords": ["..."], "location": "...",
-                "status": "ok|error|skipped", "found": 0, "kept": 0, "note": ""}]}
-  Use one entry per platform/source you searched or used. Use [] if none apply.
+                "status": "ok|error|skipped", "found": 0, "kept": 0, "note": ""}],
+   "items": [{"title": "...", "url": "https://...", "company": "...", "location": "...",
+              "...": "any other short string fields worth showing"}]}
+  - sources: one entry per platform/source you searched or used ([] if none apply).
+  - items: one entry per individual result listed in the result (e.g. each job found),
+    in the same order, with its direct URL. Use [] if the result has no individual items.
 - Both files must exist before you finish.
 
 TODAY: ${new Date().toISOString().slice(0, 10)}
