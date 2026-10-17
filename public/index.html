@@ -101,7 +101,10 @@
   a.back { color: var(--accent); text-decoration: none; font-size: 14px; }
   .empty { padding: 16px 4px; color: var(--muted); }
   [hidden] { display: none !important; }
-  nav.tabs { display: flex; gap: 4px; background: var(--surface-2); border-radius: 10px; padding: 3px; }
+  header { flex-wrap: wrap; align-items: center; }
+  h1 { white-space: nowrap; }
+  button.ghost:disabled { opacity: .45; cursor: default; }
+  nav.tabs { overflow-x: auto; max-width: 100%; display: flex; gap: 4px; background: var(--surface-2); border-radius: 10px; padding: 3px; }
   nav.tabs a { padding: 5px 14px; border-radius: 8px; color: var(--muted); text-decoration: none; font-size: 14px; font-weight: 600; }
   nav.tabs a.on { background: var(--surface); color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
   .files { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -128,9 +131,8 @@
       <h1>Claude Runner</h1>
       <span class="muted" id="project"></span>
     </div>
-    <nav class="tabs">
+    <nav class="tabs" id="tabs">
       <a href="#" id="tab-runs" class="on">Runs</a>
-      <a href="#/rules" id="tab-rules">Rules</a>
     </nav>
   </header>
 
@@ -192,7 +194,7 @@
   </section>
   <section id="rules-view" hidden>
     <div class="card">
-      <h2>Rule files</h2>
+      <h2 id="files-title">Files</h2>
       <p class="muted" style="margin:0 0 10px;font-size:14px">Editing here never starts a job. Changes apply to the next run.</p>
       <div class="files" id="files"></div>
     </div>
@@ -260,6 +262,14 @@ function sourceTags(sources) {
 
 async function loadConfig() {
   const cfg = await api('/api/config');
+  for (const g of cfg.groups || []) {
+    const a = document.createElement('a');
+    a.href = `#/edit/${g.slug}`;
+    a.dataset.group = g.slug;
+    a.textContent = g.label;
+    $('tabs').appendChild(a);
+  }
+  highlightTab();
   $('project').textContent = cfg.project;
   $('hint').textContent = `timeout ${cfg.timeout}${cfg.mail ? ' · result emailed' : ''}`;
   $('presets').innerHTML = cfg.presets.map((p) => `<button type="button" class="chip">${esc(p)}</button>`).join('');
@@ -403,24 +413,31 @@ function setMode(preview) {
   $('ed-mode-preview').classList.toggle('on', preview);
   $('ed-text').hidden = preview;
   $('ed-preview').hidden = !preview;
-  if (preview) $('ed-preview').innerHTML = renderMarkdown($('ed-text').value);
+  if (preview) {
+    $('ed-preview').innerHTML = /\.(md|markdown)$/i.test(ed.name || '')
+      ? renderMarkdown($('ed-text').value)
+      : `<pre class="log" style="max-height:none">${esc($('ed-text').value)}</pre>`;
+  }
 }
 
-async function showRules(fileId) {
-  const { files, active } = await api('/api/files');
+async function showFiles(groupSlug, fileId) {
+  const { files: all, active } = await api('/api/files');
+  const files = all.filter((f) => f.groupSlug === groupSlug);
+  $('files-title').textContent = files[0]?.group ?? 'Files';
   $('ed-running').hidden = !active;
   $('files').innerHTML = files.length ? files.map((f) => `
-    <a class="file-btn ${String(f.id) === fileId ? 'on' : ''}" href="#/rules/${f.id}" style="text-decoration:none">
+    <a class="file-btn ${String(f.id) === fileId ? 'on' : ''}" href="#/edit/${esc(groupSlug)}/${f.id}" style="text-decoration:none">
       ${esc(f.label)}<small>${esc(f.name)}${f.exists ? '' : ' · new file'}</small>
-    </a>`).join('') : '<span class="muted">No editable files. Add "editableFiles" to config.json.</span>';
-  if (fileId == null && files.length) { location.replace(`#/rules/${files[0].id}`); return; }
-  if (fileId == null) { $('editor-card').hidden = true; return; }
+    </a>`).join('') : '<span class="muted">No editable files here. Add "editableFiles" to config.json.</span>';
+  if (fileId == null && files.length) { location.replace(`#/edit/${groupSlug}/${files[0].id}`); return; }
+  if (fileId == null || !files.some((f) => String(f.id) === fileId)) { $('editor-card').hidden = true; ed.id = null; return; }
   if (String(ed.id) !== fileId) await openFile(fileId);
 }
 
 async function openFile(fileId) {
   const f = await api(`/api/files/${fileId}`);
   ed.id = String(f.id);
+  ed.name = f.name;
   ed.saved = f.content;
   ed.mtimeMs = f.mtimeMs;
   $('editor-card').hidden = false;
@@ -494,18 +511,23 @@ window.addEventListener('beforeunload', (e) => {
 
 let lastHash = location.hash;
 
+function highlightTab() {
+  const group = location.hash.match(/^#\/edit\/([\w-]+)/)?.[1];
+  $('tabs').querySelectorAll('a').forEach((a) => a.classList.toggle('on', group ? a.dataset.group === group : a.id === 'tab-runs'));
+}
+
 async function route() {
   clearTimeout(timer);
   const run = location.hash.match(/^#\/run\/(\d{8}-\d{6})$/);
-  const rules = location.hash.match(/^#\/rules(?:\/(\d+))?$/);
-  $('list-view').hidden = Boolean(run || rules);
+  if (/^#\/rules/.test(location.hash)) { location.replace('#/edit/rules'); return; } // old links
+  const edit = location.hash.match(/^#\/edit\/([\w-]+)(?:\/(\d+))?$/);
+  $('list-view').hidden = Boolean(run || edit);
   $('detail-view').hidden = !run;
-  $('rules-view').hidden = !rules;
-  $('tab-runs').classList.toggle('on', !rules);
-  $('tab-rules').classList.toggle('on', Boolean(rules));
-  if (rules) {
+  $('rules-view').hidden = !edit;
+  highlightTab();
+  if (edit) {
     // No polling here: a refresh must never touch text being edited.
-    try { await showRules(rules[1] ?? null); } catch (err) { setMsg(err.message, 'err'); }
+    try { await showFiles(edit[1], edit[2] ?? null); } catch (err) { setMsg(err.message, 'err'); }
     return;
   }
   let active = false;
@@ -523,7 +545,7 @@ if (window.DOMPurify) {
   });
 }
 window.addEventListener('hashchange', () => {
-  const leavingFile = lastHash.match(/^#\/rules\/\d+$/) && lastHash !== location.hash;
+  const leavingFile = /^#\/edit\/[\w-]+\/\d+$/.test(lastHash) && lastHash !== location.hash;
   if (leavingFile && isDirty() && !confirm('You have unsaved changes. Leave without saving?')) {
     history.replaceState(null, '', lastHash);
     return;

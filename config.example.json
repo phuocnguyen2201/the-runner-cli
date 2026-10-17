@@ -11,6 +11,11 @@
     {
       "label": "Project rules",
       "path": "CLAUDE.md"
+    },
+    {
+      "label": "About me",
+      "path": "profile.md",
+      "group": "Profile"
     }
   ],
   "mcpConfig": null,

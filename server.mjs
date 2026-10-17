@@ -9,7 +9,7 @@ import { join, basename } from 'node:path';
 import {
   ROOT, RUN_ID_RE, loadConfig, newRunId, runDir, readJson, updateStatus, isAlive, activeLock,
 } from './lib/config.mjs';
-import { editableFiles, fileInfo, readEditable, saveEditable, readVersion } from './lib/files.mjs';
+import { editableFiles, fileGroups, fileInfo, readEditable, saveEditable, readVersion } from './lib/files.mjs';
 
 const cfg = loadConfig();
 const host = resolveHost(cfg.host);
@@ -33,6 +33,7 @@ const server = createServer(async (req, res) => {
         presets: cfg.presets,
         mail: Boolean(cfg.mail?.to),
         timeout: cfg.timeout,
+        groups: fileGroups(cfg),
       });
     }
     if (req.method === 'GET' && path === '/api/files') {

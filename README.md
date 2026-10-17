@@ -94,7 +94,7 @@ printf "Subject: test\n\nhi" | msmtp you@gmail.com
 | `port` | Default `8787`. |
 | `projectDir` | Folder Claude runs in. Its `CLAUDE.md`, skills and settings apply. |
 | `promptFile` | Base prompt for every job. The request typed in the UI is appended to it. |
-| `editableFiles` | Files that can be edited on the **Rules** page: a list of `{ "label", "path" }` (or plain paths). Relative paths resolve from `projectDir`. If you leave it out, only `promptFile` is editable. |
+| `editableFiles` | Files that can be edited on the **Rules** page: a list of `{ "label", "path", "group" }` (or plain paths). Each `group` becomes its own tab; the default group is "Rules". `.yml`/`.yaml` saves with tab indentation are refused, and `.json` saves must parse. Relative paths resolve from `projectDir`. If you leave it out, only `promptFile` is editable. |
 | `mcpConfig` | Optional MCP config file passed to `--mcp-config`. Use headless browsers on a server, e.g. `@playwright/mcp --headless`. |
 | `allowedTools` | Comma-separated tool allowlist for `--allowedTools`, e.g. `Read,Write,Edit,Glob,Grep,Bash(node *),mcp__playwright__*`. |
 | `model` | Optional `--model` override. |
