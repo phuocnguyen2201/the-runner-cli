@@ -4,6 +4,7 @@ A small web UI for running **headless Claude Code jobs** on an always-on Linux b
 
 - Type a request ("run the daily job", "only check source X") and press Start. The job runs on the server, so you can close the browser.
 - Watch a live log while it runs. Cancel it if needed.
+- A **Rules** page lets you edit the prompt and rule files (allowlisted in config) without starting a job. Each save keeps the previous version, and a save is refused if the file changed on disk since you opened it.
 - Every run is kept in a **history**: date, request, trigger (web/cron/cli), status, duration and cost. It also lists the **platforms and keywords** Claude used, from `meta.json`.
 - Each finished run is **emailed** through any sendmail-compatible command, e.g. `msmtp`.
 - Cron jobs use the same runner, so scheduled runs show up in the same history.
@@ -93,6 +94,7 @@ printf "Subject: test\n\nhi" | msmtp you@gmail.com
 | `port` | Default `8787`. |
 | `projectDir` | Folder Claude runs in. Its `CLAUDE.md`, skills and settings apply. |
 | `promptFile` | Base prompt for every job. The request typed in the UI is appended to it. |
+| `editableFiles` | Files that can be edited on the **Rules** page: a list of `{ "label", "path" }` (or plain paths). Relative paths resolve from `projectDir`. If you leave it out, only `promptFile` is editable. |
 | `mcpConfig` | Optional MCP config file passed to `--mcp-config`. Use headless browsers on a server, e.g. `@playwright/mcp --headless`. |
 | `allowedTools` | Comma-separated tool allowlist for `--allowedTools`, e.g. `Read,Write,Edit,Glob,Grep,Bash(node *),mcp__playwright__*`. |
 | `model` | Optional `--model` override. |
@@ -143,6 +145,7 @@ node bin/run-job.mjs auto "your request" cli
 - The server only listens on the Tailscale interface by default. Anyone on your tailnet can start jobs, so use Tailscale ACLs if you share the tailnet.
 - Requests are passed to the runner as a single argument and never go through a shell. They are capped at 500 characters.
 - Claude can only use the tools in `allowedTools`. Keep the list as narrow as your job allows.
+- The Rules page can only open files listed in `editableFiles`. Files are addressed by their position in that list, never by a path sent from the browser. The last 20 versions of each file are kept in `runs/.versions/`.
 - Result Markdown is sanitized (DOMPurify) before it is shown.
 - The UI loads `marked` and `DOMPurify` from cdnjs. If they can't load, the result is shown as plain text.
 

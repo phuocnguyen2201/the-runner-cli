@@ -3,6 +3,16 @@
   "port": 8787,
   "projectDir": "/home/pi/my-project",
   "promptFile": "/home/pi/my-project/prompt.md",
+  "editableFiles": [
+    {
+      "label": "Job prompt",
+      "path": "prompt.md"
+    },
+    {
+      "label": "Project rules",
+      "path": "CLAUDE.md"
+    }
+  ],
   "mcpConfig": null,
   "allowedTools": "Read,Write,Edit,Glob,Grep,Bash(node *)",
   "model": null,
@@ -14,5 +24,7 @@
     "from": null,
     "command": "msmtp -t"
   },
-  "presets": ["run the daily job"]
+  "presets": [
+    "run the daily job"
+  ]
 }

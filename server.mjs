@@ -9,6 +9,7 @@ import { join, basename } from 'node:path';
 import {
   ROOT, RUN_ID_RE, loadConfig, newRunId, runDir, readJson, updateStatus, isAlive, activeLock,
 } from './lib/config.mjs';
+import { editableFiles, fileInfo, readEditable, saveEditable, readVersion } from './lib/files.mjs';
 
 const cfg = loadConfig();
 const host = resolveHost(cfg.host);
@@ -34,6 +35,20 @@ const server = createServer(async (req, res) => {
         timeout: cfg.timeout,
       });
     }
+    if (req.method === 'GET' && path === '/api/files') {
+      return json(res, 200, { files: editableFiles(cfg).map(fileInfo), active: activeRunId() });
+    }
+    const f = path.match(/^\/api\/files\/(\d+)(?:\/versions\/([\w-]+))?$/);
+    if (f) {
+      const file = editableFiles(cfg)[Number(f[1])];
+      if (!file) return json(res, 404, { error: 'file not found' });
+      if (req.method === 'GET' && f[2]) return json(res, 200, { content: readVersion(cfg, file, f[2]) });
+      if (req.method === 'GET') return json(res, 200, readEditable(cfg, file));
+      if (req.method === 'PUT' && !f[2]) {
+        const body = await readBody(req, 2 * 1024 * 1024);
+        return json(res, 200, saveEditable(cfg, file, body.content, body.baseMtimeMs));
+      }
+    }
     if (req.method === 'GET' && path === '/api/runs') {
       return json(res, 200, { active: activeRunId(), runs: listRuns() });
     }
@@ -51,8 +66,8 @@ const server = createServer(async (req, res) => {
 
     json(res, 404, { error: 'not found' });
   } catch (err) {
-    console.error(err);
-    json(res, 500, { error: err.message });
+    if (!err.status) console.error(err);
+    json(res, err.status || 500, { error: err.message });
   }
 });
 
@@ -192,12 +207,12 @@ function json(res, code, data) {
   send(res, code, JSON.stringify(data), 'application/json; charset=utf-8');
 }
 
-function readBody(req) {
+function readBody(req, limit = 16 * 1024) {
   return new Promise((resolve, reject) => {
     let data = '';
     req.on('data', (chunk) => {
       data += chunk;
-      if (data.length > 16 * 1024) req.destroy(new Error('body too large'));
+      if (data.length > limit) req.destroy(new Error('body too large'));
     });
     req.on('end', () => {
       try {

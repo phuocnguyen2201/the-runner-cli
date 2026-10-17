@@ -101,13 +101,37 @@
   a.back { color: var(--accent); text-decoration: none; font-size: 14px; }
   .empty { padding: 16px 4px; color: var(--muted); }
   [hidden] { display: none !important; }
+  nav.tabs { display: flex; gap: 4px; background: var(--surface-2); border-radius: 10px; padding: 3px; }
+  nav.tabs a { padding: 5px 14px; border-radius: 8px; color: var(--muted); text-decoration: none; font-size: 14px; font-weight: 600; }
+  nav.tabs a.on { background: var(--surface); color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+  .files { display: flex; flex-wrap: wrap; gap: 8px; }
+  .file-btn { text-align: left; border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: 10px; padding: 8px 12px; font: inherit; cursor: pointer; }
+  .file-btn small { display: block; color: var(--muted); font-size: 12px; }
+  .file-btn.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+  .editor-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
+  .editor-bar .grow { flex: 1 1 auto; min-width: 0; }
+  .editor-bar .path { font: 12px var(--mono); color: var(--muted); overflow-wrap: anywhere; }
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .seg button { background: none; border: 0; padding: 6px 12px; font: inherit; font-size: 13px; color: var(--muted); cursor: pointer; }
+  .seg button.on { background: var(--surface-2); color: var(--text); font-weight: 600; }
+  select { font: inherit; font-size: 13px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); max-width: 100%; }
+  textarea.code { min-height: 60vh; font: 13px/1.55 var(--mono); tab-size: 2; white-space: pre; overflow: auto; }
+  .note { font-size: 13px; padding: 8px 12px; border-radius: 8px; margin-bottom: 10px; background: var(--surface-2); }
+  .note.warn { color: var(--warn); } .note.err { color: var(--err); } .note.ok { color: var(--ok); }
+  .dirty { color: var(--warn); font-size: 13px; font-weight: 600; }
 </style>
 </head>
 <body>
 <main>
   <header>
-    <h1>Claude Runner</h1>
-    <span class="muted" id="project"></span>
+    <div>
+      <h1>Claude Runner</h1>
+      <span class="muted" id="project"></span>
+    </div>
+    <nav class="tabs">
+      <a href="#" id="tab-runs" class="on">Runs</a>
+      <a href="#/rules" id="tab-rules">Rules</a>
+    </nav>
   </header>
 
   <section id="list-view">
@@ -164,6 +188,31 @@
     <div class="card">
       <h2>Log</h2>
       <pre class="log" id="d-log"></pre>
+    </div>
+  </section>
+  <section id="rules-view" hidden>
+    <div class="card">
+      <h2>Rule files</h2>
+      <p class="muted" style="margin:0 0 10px;font-size:14px">Editing here never starts a job. Changes apply to the next run.</p>
+      <div class="files" id="files"></div>
+    </div>
+    <div class="card" id="editor-card" hidden>
+      <div class="editor-bar">
+        <div class="grow">
+          <strong id="ed-label"></strong> <span class="dirty" id="ed-dirty" hidden>● unsaved</span>
+          <div class="path" id="ed-path"></div>
+        </div>
+        <div class="seg"><button type="button" id="ed-mode-edit" class="on">Edit</button><button type="button" id="ed-mode-preview">Preview</button></div>
+      </div>
+      <div class="note warn" id="ed-running" hidden>A job is running right now. Saving is allowed, but the running job already loaded the old rules.</div>
+      <div class="note" id="ed-msg" hidden></div>
+      <textarea class="code" id="ed-text" spellcheck="false"></textarea>
+      <div class="result card" id="ed-preview" hidden style="margin:0"></div>
+      <div class="row">
+        <select id="ed-versions"><option value="">Previous versions…</option></select>
+        <button class="ghost" type="button" id="ed-revert">Discard changes</button>
+        <button class="primary" type="button" id="ed-save" disabled>Save</button>
+      </div>
     </div>
   </section>
 </main>
@@ -330,16 +379,138 @@ async function refreshDetail(id) {
   return active;
 }
 
+
+// ── rules view ─────────────────────────────────────────────────────────────
+
+const ed = { id: null, saved: '', mtimeMs: 0 };
+const isDirty = () => ed.id !== null && $('ed-text').value !== ed.saved;
+
+function setMsg(text, kind = '') {
+  $('ed-msg').hidden = !text;
+  $('ed-msg').className = `note ${kind}`;
+  $('ed-msg').textContent = text || '';
+}
+
+function updateDirty() {
+  const dirty = isDirty();
+  $('ed-dirty').hidden = !dirty;
+  $('ed-save').disabled = !dirty;
+  $('ed-revert').disabled = !dirty;
+}
+
+function setMode(preview) {
+  $('ed-mode-edit').classList.toggle('on', !preview);
+  $('ed-mode-preview').classList.toggle('on', preview);
+  $('ed-text').hidden = preview;
+  $('ed-preview').hidden = !preview;
+  if (preview) $('ed-preview').innerHTML = renderMarkdown($('ed-text').value);
+}
+
+async function showRules(fileId) {
+  const { files, active } = await api('/api/files');
+  $('ed-running').hidden = !active;
+  $('files').innerHTML = files.length ? files.map((f) => `
+    <a class="file-btn ${String(f.id) === fileId ? 'on' : ''}" href="#/rules/${f.id}" style="text-decoration:none">
+      ${esc(f.label)}<small>${esc(f.name)}${f.exists ? '' : ' · new file'}</small>
+    </a>`).join('') : '<span class="muted">No editable files. Add "editableFiles" to config.json.</span>';
+  if (fileId == null && files.length) { location.replace(`#/rules/${files[0].id}`); return; }
+  if (fileId == null) { $('editor-card').hidden = true; return; }
+  if (String(ed.id) !== fileId) await openFile(fileId);
+}
+
+async function openFile(fileId) {
+  const f = await api(`/api/files/${fileId}`);
+  ed.id = String(f.id);
+  ed.saved = f.content;
+  ed.mtimeMs = f.mtimeMs;
+  $('editor-card').hidden = false;
+  $('ed-label').textContent = f.label;
+  $('ed-path').textContent = f.path;
+  $('ed-text').value = f.content;
+  $('ed-versions').innerHTML = '<option value="">Previous versions…</option>' +
+    f.versions.map((v) => `<option value="${esc(v)}">${esc(fmtVersion(v))}</option>`).join('');
+  setMsg(f.exists ? '' : 'This file does not exist yet. Saving will create it.', f.exists ? '' : 'warn');
+  setMode(false);
+  updateDirty();
+}
+
+function fmtVersion(v) {
+  const [d, t] = v.split('-');
+  return fmtDate(`${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}T${t.slice(0, 2)}:${t.slice(2, 4)}:${t.slice(4, 6)}`);
+}
+
+async function saveFile() {
+  if (!isDirty()) return;
+  $('ed-save').disabled = true;
+  try {
+    const f = await api(`/api/files/${ed.id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ content: $('ed-text').value, baseMtimeMs: ed.mtimeMs }),
+    });
+    ed.saved = f.content;
+    ed.mtimeMs = f.mtimeMs;
+    $('ed-versions').innerHTML = '<option value="">Previous versions…</option>' +
+      f.versions.map((v) => `<option value="${esc(v)}">${esc(fmtVersion(v))}</option>`).join('');
+    setMsg(`Saved at ${new Date().toLocaleTimeString()}. The previous version was kept.`, 'ok');
+  } catch (err) {
+    setMsg(err.message, 'err');
+  }
+  updateDirty();
+}
+
+$('ed-text').addEventListener('input', updateDirty);
+$('ed-save').addEventListener('click', saveFile);
+$('ed-revert').addEventListener('click', () => {
+  if (!confirm('Discard your unsaved changes?')) return;
+  $('ed-text').value = ed.saved;
+  setMode(false);
+  setMsg('');
+  updateDirty();
+});
+$('ed-mode-edit').addEventListener('click', () => setMode(false));
+$('ed-mode-preview').addEventListener('click', () => setMode(true));
+$('ed-versions').addEventListener('change', async (e) => {
+  const v = e.target.value;
+  e.target.value = '';
+  if (!v) return;
+  if (isDirty() && !confirm('Replace your unsaved changes with this older version?')) return;
+  const { content } = await api(`/api/files/${ed.id}/versions/${v}`);
+  $('ed-text').value = content;
+  setMode(false);
+  setMsg(`Loaded the version from ${fmtVersion(v)} into the editor. Press Save to restore it.`, 'warn');
+  updateDirty();
+});
+document.addEventListener('keydown', (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's' && !$('rules-view').hidden) {
+    e.preventDefault();
+    saveFile();
+  }
+});
+window.addEventListener('beforeunload', (e) => {
+  if (isDirty()) { e.preventDefault(); e.returnValue = ''; }
+});
+
 // ── routing + polling ──────────────────────────────────────────────────────
+
+let lastHash = location.hash;
 
 async function route() {
   clearTimeout(timer);
-  const m = location.hash.match(/^#\/run\/(\d{8}-\d{6})$/);
-  $('list-view').hidden = Boolean(m);
-  $('detail-view').hidden = !m;
+  const run = location.hash.match(/^#\/run\/(\d{8}-\d{6})$/);
+  const rules = location.hash.match(/^#\/rules(?:\/(\d+))?$/);
+  $('list-view').hidden = Boolean(run || rules);
+  $('detail-view').hidden = !run;
+  $('rules-view').hidden = !rules;
+  $('tab-runs').classList.toggle('on', !rules);
+  $('tab-rules').classList.toggle('on', Boolean(rules));
+  if (rules) {
+    // No polling here: a refresh must never touch text being edited.
+    try { await showRules(rules[1] ?? null); } catch (err) { setMsg(err.message, 'err'); }
+    return;
+  }
   let active = false;
   try {
-    active = m ? await refreshDetail(m[1]) : await refreshList();
+    active = run ? await refreshDetail(run[1]) : await refreshList();
   } catch (err) {
     console.error(err);
   }
@@ -351,8 +522,18 @@ if (window.DOMPurify) {
     if (node.tagName === 'A') { node.setAttribute('target', '_blank'); node.setAttribute('rel', 'noopener noreferrer'); }
   });
 }
-window.addEventListener('hashchange', () => { window.scrollTo(0, 0); route(); });
-document.addEventListener('visibilitychange', () => { if (!document.hidden) route(); });
+window.addEventListener('hashchange', () => {
+  const leavingFile = lastHash.match(/^#\/rules\/\d+$/) && lastHash !== location.hash;
+  if (leavingFile && isDirty() && !confirm('You have unsaved changes. Leave without saving?')) {
+    history.replaceState(null, '', lastHash);
+    return;
+  }
+  if (leavingFile) ed.id = null;
+  lastHash = location.hash;
+  window.scrollTo(0, 0);
+  route();
+});
+document.addEventListener('visibilitychange', () => { if (!document.hidden && $('rules-view').hidden) route(); });
 loadConfig().catch((err) => { $('form-error').textContent = err.message; });
 route();
 </script>
