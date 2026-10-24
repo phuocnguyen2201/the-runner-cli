@@ -56,6 +56,9 @@
     border-radius: 8px; padding: 8px 18px; font: inherit; font-weight: 600; cursor: pointer;
   }
   button.primary:disabled { opacity: .5; cursor: not-allowed; }
+  #paste-eval:not([hidden]) + button.primary { margin-left: 0; }
+  details.input summary { cursor: pointer; color: var(--muted); font-size: 15px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+  details.input pre.log { margin-top: 10px; }
   button.ghost {
     background: none; border: 1px solid var(--border); color: var(--text);
     border-radius: 8px; padding: 6px 12px; font: inherit; font-size: 13px; cursor: pointer;
@@ -171,10 +174,11 @@
     <div class="card">
       <h2>New job</h2>
       <form id="form">
-        <textarea id="request" maxlength="500" placeholder="e.g. scan for today" required></textarea>
+        <textarea id="request" maxlength="50000" placeholder="e.g. scan for today" required></textarea>
         <div class="row" id="presets"></div>
         <div class="row">
           <span class="muted" id="hint"></span>
+          <button class="ghost" id="paste-eval" type="button" style="margin-left:auto" hidden></button>
           <button class="primary" id="start" type="submit">Start</button>
         </div>
         <div class="error" id="form-error"></div>
@@ -217,6 +221,9 @@
     <div class="card" id="d-sources-card" hidden>
       <h2>Sources</h2>
       <div class="table-wrap"><table class="sources" id="d-sources"></table></div>
+    </div>
+    <div class="card" id="d-input-card" hidden>
+      <details class="input"><summary>Input</summary><pre class="log" id="d-input"></pre></details>
     </div>
     <div class="card" id="d-result-card" hidden>
       <h2>Result</h2>
@@ -344,6 +351,11 @@ async function loadConfig() {
   highlightTab();
   $('project').textContent = cfg.project;
   $('hint').textContent = `timeout ${cfg.timeout}${cfg.mail ? ' · result emailed' : ''}`;
+  if (cfg.pasteAction) {
+    $('paste-eval').textContent = cfg.pasteAction.label;
+    $('paste-eval').hidden = false;
+    $('request').placeholder = `e.g. scan for today — or paste text and press “${cfg.pasteAction.label}”`;
+  }
   $('presets').innerHTML = cfg.presets.map((p) => `<button type="button" class="chip">${esc(p)}</button>`).join('');
   $('presets').querySelectorAll('.chip').forEach((b) => b.addEventListener('click', () => {
     $('request').value = b.textContent;
@@ -354,6 +366,7 @@ async function loadConfig() {
 async function refreshList() {
   const { active, runs } = await api('/api/runs');
   $('start').disabled = Boolean(active);
+  $('paste-eval').disabled = Boolean(active);
   $('runs').innerHTML = runs.length ? runs.map((r) => `
     <li><a class="run" href="#/run/${esc(r.id)}">
       <span class="req">${esc(r.summary || r.request || r.id)}</span>
@@ -388,6 +401,12 @@ $('form').addEventListener('submit', async (e) => {
   $('form-error').textContent = '';
   const request = $('request').value.trim();
   if (!request) return;
+  if (request.length > 500) {
+    $('form-error').textContent = appCfg.pasteAction
+      ? `Too long for a request (max 500 characters). Use “${appCfg.pasteAction.label}” for pasted text.`
+      : 'Too long for a request (max 500 characters).';
+    return;
+  }
   $('start').disabled = true;
   try {
     await api('/api/runs', { method: 'POST', body: JSON.stringify({ request }) });
@@ -396,6 +415,21 @@ $('form').addEventListener('submit', async (e) => {
   } catch (err) {
     $('form-error').textContent = err.message;
     $('start').disabled = false;
+  }
+});
+
+$('paste-eval').addEventListener('click', async () => {
+  $('form-error').textContent = '';
+  const text = $('request').value.trim();
+  if (!text) { $('form-error').textContent = 'Paste the text to evaluate first.'; $('request').focus(); return; }
+  $('paste-eval').disabled = true;
+  try {
+    await api('/api/runs/paste', { method: 'POST', body: JSON.stringify({ text }) });
+    $('request').value = '';
+    setTimeout(route, 800);
+  } catch (err) {
+    $('form-error').textContent = err.message;
+    $('paste-eval').disabled = false;
   }
 });
 
@@ -452,6 +486,9 @@ async function refreshDetail(id) {
         <td>${esc(s.found)}</td><td>${esc(s.kept)}</td><td>${esc(s.note)}</td>
       </tr>`).join('');
   }
+
+  $('d-input-card').hidden = !r.input;
+  if (r.input && $('d-input').textContent !== r.input) $('d-input').textContent = r.input;
 
   $('d-result-card').hidden = !r.result;
   if (r.result) $('d-result').innerHTML = renderMarkdown(r.result);
