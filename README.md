@@ -17,6 +17,7 @@ server.mjs            web server + JSON API
 bin/run-job.mjs       runs one job: claude -p → runs/<id>/ → email
 lib/config.mjs        shared config / run-folder helpers
 public/index.html     the UI
+functions/            Cloudflare Pages proxy (optional, see below)
 systemd/              user service unit
 examples/crontab.txt  scheduled runs
 ```
@@ -155,6 +156,59 @@ sudo tailscale serve --bg 8787
 ```
 After that the UI is at `https://<machine>.<tailnet>.ts.net`.
 
+## Hosting the UI on Cloudflare Pages (optional)
+
+Use this to reach the UI without Tailscale. The page is served by Cloudflare Pages; jobs, history and files stay on the Pi.
+
+```
+browser ──(Access login)──> Pages: runner.example.com
+                              ├─ /        public/index.html
+                              └─ /api/*   functions/api/[[path]].js ──(service token)──> runner-api.example.com
+                                                                         Cloudflare Tunnel ──> Pi :8787
+```
+
+The server has no login of its own, so **Cloudflare Access is what keeps strangers out**. Do every step below. You need a domain on Cloudflare (`example.com` here).
+
+1. **Tunnel on the Pi** ([install cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/)):
+   ```bash
+   cloudflared tunnel login
+   cloudflared tunnel create runner
+   cloudflared tunnel route dns runner runner-api.example.com
+   ```
+   `~/.cloudflared/config.yml`:
+   ```yaml
+   tunnel: runner
+   credentials-file: /home/pi/.cloudflared/<tunnel-id>.json
+   ingress:
+     - hostname: runner-api.example.com
+       service: http://<tailscale-ip>:8787   # the address the server listens on (see "host")
+     - service: http_status:404
+   ```
+   Then `sudo cloudflared --config ~/.cloudflared/config.yml service install`. The server keeps listening on Tailscale only, so the tailnet URL still works.
+
+2. **Access** (Zero Trust dashboard):
+   - *Access → Service Auth → Create service token.* Copy the Client ID and Secret.
+   - *Applications → Add → Self-hosted* for `runner-api.example.com`, one policy with action **Service Auth** that includes that token. Nothing else.
+   - *Applications → Add → Self-hosted* for the UI: `runner.example.com` **and** `<project>.pages.dev`, policy **Allow** with your email.
+
+3. **Pages project** (*Workers & Pages → Create → Pages → connect this repo*):
+   - Build command: none. Build output directory: `public`. Root directory: `/` (so `functions/` is deployed).
+   - Environment variables (as secrets): `API_ORIGIN=https://runner-api.example.com`, `CF_ACCESS_CLIENT_ID`, `CF_ACCESS_CLIENT_SECRET`.
+   - *Custom domains → add* `runner.example.com`.
+
+Check it:
+```bash
+curl -i https://runner-api.example.com/api/config          # 302/403: no token, no entry
+curl -i https://<project>.pages.dev/api/runs                # Access login redirect, never JSON
+```
+Then open `https://runner.example.com` in a private window: log in, start a short job, and check it shows up in `runs/` on the Pi.
+
+Notes:
+- **Protect `<project>.pages.dev` too.** If Access covers only the custom domain, `pages.dev/api/*` forwards anyone to the Pi with the service token attached. Also turn on Access for preview deployments (*Pages → Settings → General*).
+- Cloudflare ends proxied requests after about 100 seconds. A `command` item action that takes longer still finishes on the Pi, but the UI shows an error.
+- Changes to `public/index.html` reach the Cloudflare URL only after Pages redeploys (a git push).
+- To test the proxy locally: put the three variables in `.dev.vars` and run `npx wrangler pages dev public`.
+
 ## Scheduled runs (cron)
 
 ```bash
@@ -173,6 +227,7 @@ node bin/run-job.mjs auto "your request" cli
 ## Security notes
 
 - The server only listens on the Tailscale interface by default. Anyone on your tailnet can start jobs, so use Tailscale ACLs if you share the tailnet.
+- With the Cloudflare Pages setup, Cloudflare Access is the only login. Keep the API hostname on a Service Auth policy and cover every UI hostname (including `pages.dev`) with an Allow policy.
 - Requests are passed to the runner as a single argument and never go through a shell. They are capped at 500 characters.
 - Claude can only use the tools in `allowedTools`. Keep the list as narrow as your job allows.
 - The Rules page can only open files listed in `editableFiles`. Files are addressed by their position in that list, never by a path sent from the browser. The last 20 versions of each file are kept in `runs/.versions/`.
