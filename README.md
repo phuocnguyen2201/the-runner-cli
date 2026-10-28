@@ -109,6 +109,7 @@ printf "Subject: test\n\nhi" | msmtp you@gmail.com
 | `presets` | Quick-pick request chips shown in the UI. |
 | `items.label` | Heading for the per-item list on a run page (e.g. `"Jobs found"`). |
 | `itemActions` | Buttons shown on each item. See [Item actions](#item-actions). |
+| `pasteAction` | Optional second button on the New job card for long pasted text, e.g. a job description. See [Pasted text](#pasted-text). |
 
 Relative paths are resolved from the repo folder. Set `RUNNER_CONFIG=/path/to/config.json` to use a different config file.
 
@@ -136,6 +137,19 @@ When Claude lists `items` in `meta.json`, the run page shows them with one butto
   - The button shows Queued…, then the `runningLabel`, then the `doneLabel` plus the job's `badge`. Clicking it after it's done opens the result in a large dialog.
 - Item data always comes from the run's `meta.json` on the server; the browser only sends the item's position in the list.
 - Item state is kept in `runs/items.json`, keyed by the item's URL. A job found again in a later run keeps its Applied/Evaluated state.
+
+## Pasted text
+
+`pasteAction` adds a button next to **Start** that runs a job on whatever is pasted into the request box, instead of using it as the request:
+
+```json
+"pasteAction": { "label": "Evaluate this JD", "promptFile": "prompts/evaluate.md",
+                 "request": "Evaluate the pasted job description" }
+```
+
+- The text (up to 50,000 characters) is saved to `runs/<id>/input.md` and added to the prompt under `## PASTED INPUT`.
+- `promptFile` (relative to `projectDir`) replaces the default prompt, and `request` is the short request shown in the history. The trigger is `paste`.
+- Like **Start**, it is refused while another job is running. The run page shows the pasted text in a collapsed **Input** card.
 
 ## Run it as a service
 

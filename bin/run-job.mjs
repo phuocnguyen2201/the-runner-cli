@@ -190,6 +190,10 @@ function olderWaiterExists() {
 
 function buildPrompt() {
   const base = promptFile ? readFileSync(promptFile, 'utf8') : '';
+  const inputPath = join(dir, 'input.md');
+  const input = existsSync(inputPath)
+    ? `\n---\n\n## PASTED INPUT (provided by the user)\n\n${readFileSync(inputPath, 'utf8').trimEnd()}\n`
+    : '';
   return `${base}
 
 ---
@@ -197,7 +201,7 @@ function buildPrompt() {
 ## USER REQUEST
 
 ${request}
-
+${input}
 ---
 
 ## RUNNER CONTRACT (takes precedence over output paths above)

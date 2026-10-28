@@ -4,7 +4,7 @@
 
 import { createServer } from 'node:http';
 import { spawn, execFileSync } from 'node:child_process';
-import { readFileSync, readdirSync, existsSync, statSync, openSync, readSync, closeSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, readdirSync, existsSync, statSync, openSync, readSync, closeSync, mkdirSync } from 'node:fs';
 import { join, basename, isAbsolute, resolve } from 'node:path';
 import {
   ROOT, RUN_ID_RE, loadConfig, newRunId, runDir, readJson, updateStatus, isAlive, activeLock,
@@ -18,6 +18,7 @@ const cfg = loadConfig();
 const host = resolveHost(cfg.host);
 const INDEX = join(ROOT, 'public', 'index.html');
 const MAX_REQUEST = 500;
+const MAX_PASTE = 50_000;
 let startingId = null; // run spawned by this server that may not hold the lock yet
 let lastSpawnedId = null;
 
@@ -27,6 +28,10 @@ for (const a of itemActions(cfg)) {
     const p = isAbsolute(a.promptFile) ? a.promptFile : resolve(cfg.projectDir, a.promptFile);
     if (!existsSync(p)) console.warn(`⚠️  itemActions "${a.id}": promptFile not found: ${p}`);
   }
+}
+if (cfg.pasteAction?.promptFile) {
+  const p = isAbsolute(cfg.pasteAction.promptFile) ? cfg.pasteAction.promptFile : resolve(cfg.projectDir, cfg.pasteAction.promptFile);
+  if (!existsSync(p)) console.warn(`⚠️  pasteAction: promptFile not found: ${p}`);
 }
 
 const server = createServer(async (req, res) => {
@@ -46,6 +51,7 @@ const server = createServer(async (req, res) => {
         groups: fileGroups(cfg),
         itemsLabel: cfg.items?.label || 'Items',
         itemActions: publicActions(cfg),
+        pasteAction: cfg.pasteAction ? { label: cfg.pasteAction.label || 'Evaluate pasted text' } : null,
       });
     }
     if (req.method === 'GET' && path === '/api/files') {
@@ -68,6 +74,9 @@ const server = createServer(async (req, res) => {
     }
     if (req.method === 'POST' && path === '/api/runs') {
       return startRun(req, res);
+    }
+    if (req.method === 'POST' && path === '/api/runs/paste') {
+      return startPasteRun(req, res);
     }
 
     const a = path.match(/^\/api\/runs\/(\d{8}-\d{6})\/items\/(\d+)\/actions\/([\w-]+)$/);
@@ -107,13 +116,31 @@ async function startRun(req, res) {
   json(res, 202, { id: startingId });
 }
 
+// Pasted text (e.g. a job description) goes to runs/<id>/input.md and runs with pasteAction.promptFile.
+async function startPasteRun(req, res) {
+  const pa = cfg.pasteAction;
+  if (!pa) return json(res, 404, { error: 'pasteAction is not configured' });
+  if (activeRunId()) {
+    return json(res, 409, { error: 'A job is already running.' });
+  }
+  const body = await readBody(req, 256 * 1024);
+  const text = String(body.text ?? '').trim();
+  if (!text) return json(res, 400, { error: 'text is required' });
+  if (text.length > MAX_PASTE) return json(res, 400, { error: `text is longer than ${MAX_PASTE} characters` });
+
+  const request = String(pa.request || pa.label || 'Evaluate the pasted text').slice(0, MAX_REQUEST);
+  startingId = spawnJob(request, 'paste', { promptFile: pa.promptFile || null }, text);
+  json(res, 202, { id: startingId });
+}
+
 // Detached + argv array: survives the browser and server going away, no shell parsing of the request.
-function spawnJob(request, trigger, opts = null) {
+function spawnJob(request, trigger, opts = null, input = null) {
   let id = newRunId();
   while (existsSync(runDir(cfg, id)) || id === lastSpawnedId) id = newRunId(new Date(Date.now() + 1000));
   lastSpawnedId = id;
   const dir = runDir(cfg, id);
   mkdirSync(dir, { recursive: true });
+  if (input) writeFileSync(join(dir, 'input.md'), input + '\n');
   updateStatus(dir, { id, request, trigger, state: 'queued', waiting: Boolean(opts?.queue), createdAt: new Date().toISOString() });
   const child = spawn(process.execPath, [join(ROOT, 'bin', 'run-job.mjs'), id, request, trigger], {
     cwd: ROOT,
@@ -229,6 +256,7 @@ function runDetail(id, dir) {
     id,
     meta: readJson(join(dir, 'meta.json'), null),
     items: runItems(dir),
+    input: readText(join(dir, 'input.md')),
     result: readText(join(dir, 'result.md')),
     log: tailFile(join(dir, 'claude.log'), 200),
   };

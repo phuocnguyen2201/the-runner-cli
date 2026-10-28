@@ -32,6 +32,11 @@
   "presets": [
     "run the daily job"
   ],
+  "pasteAction": {
+    "label": "Evaluate this JD",
+    "promptFile": "analyze-prompt.md",
+    "request": "Evaluate the pasted job description"
+  },
   "items": {
     "label": "Results"
   },
