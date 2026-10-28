@@ -63,7 +63,8 @@ const server = createServer(async (req, res) => {
       }
     }
     if (req.method === 'GET' && path === '/api/runs') {
-      return json(res, 200, { active: activeRunId(), runs: listRuns() });
+      const limit = Number(url.searchParams.get('limit')) || Infinity;
+      return json(res, 200, { active: activeRunId(), ...listRuns(limit) });
     }
     if (req.method === 'POST' && path === '/api/runs') {
       return startRun(req, res);
@@ -209,17 +210,16 @@ function activeRunId() {
   return null;
 }
 
-function listRuns() {
-  return readdirSync(cfg.runsDir)
-    .filter((name) => RUN_ID_RE.test(name))
-    .sort()
-    .reverse()
-    .map((id) => {
-      const dir = runDir(cfg, id);
-      const status = checkStale(dir, readJson(join(dir, 'status.json'), { id, state: 'unknown' }));
-      const meta = readJson(join(dir, 'meta.json'), null);
-      return { ...status, id, summary: meta?.summary ?? null, sources: meta?.sources ?? null };
-    });
+// Newest first; only the first `limit` run folders are read.
+function listRuns(limit = Infinity) {
+  const ids = readdirSync(cfg.runsDir).filter((name) => RUN_ID_RE.test(name)).sort().reverse();
+  const runs = ids.slice(0, limit).map((id) => {
+    const dir = runDir(cfg, id);
+    const status = checkStale(dir, readJson(join(dir, 'status.json'), { id, state: 'unknown' }));
+    const meta = readJson(join(dir, 'meta.json'), null);
+    return { ...status, id, summary: meta?.summary ?? null, sources: meta?.sources ?? null };
+  });
+  return { total: ids.length, runs };
 }
 
 function runDetail(id, dir) {

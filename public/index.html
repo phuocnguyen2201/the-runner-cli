@@ -168,7 +168,8 @@
   </header>
 
   <section id="list-view">
-    <div class="card">
+    <p id="history-back" hidden><a class="back" href="#">← Runs</a></p>
+    <div class="card" id="new-job">
       <h2>New job</h2>
       <form id="form">
         <textarea id="request" maxlength="500" placeholder="e.g. scan for today" required></textarea>
@@ -195,6 +196,10 @@
     <div class="card">
       <h2>History</h2>
       <ul class="runs" id="runs"></ul>
+      <div class="row">
+        <button class="ghost" id="runs-more" type="button" hidden>Show 10 more</button>
+        <a class="back" id="runs-all" href="#/history">View all history →</a>
+      </div>
     </div>
   </section>
 
@@ -351,8 +356,12 @@ async function loadConfig() {
   }));
 }
 
-async function refreshList() {
-  const { active, runs } = await api('/api/runs');
+let runsShown = 4; // kept while browsing, so returning from a run keeps the expanded list
+
+async function refreshList(historyPage = false) {
+  const { active, total, runs } = await api(`/api/runs?limit=${historyPage ? 0 : runsShown}`);
+  $('runs-more').hidden = historyPage || runs.length >= total;
+  $('runs-all').hidden = historyPage;
   $('start').disabled = Boolean(active);
   $('runs').innerHTML = runs.length ? runs.map((r) => `
     <li><a class="run" href="#/run/${esc(r.id)}">
@@ -367,9 +376,9 @@ async function refreshList() {
       </span>
     </a></li>`).join('') : '<li class="empty">No runs yet.</li>';
 
-  if (active) {
+  $('live').hidden = historyPage || !active;
+  if (!$('live').hidden) {
     const run = await api(`/api/runs/${active}`);
-    $('live').hidden = false;
     $('live-req').textContent = run.request;
     $('live-open').href = `#/run/${active}`;
     $('live-cancel').onclick = () => cancel(active);
@@ -377,11 +386,11 @@ async function refreshList() {
     const atBottom = log.scrollTop + log.clientHeight >= log.scrollHeight - 20;
     log.textContent = run.log.split('\n').slice(-40).join('\n') || 'Starting…';
     if (atBottom) log.scrollTop = log.scrollHeight;
-  } else {
-    $('live').hidden = true;
   }
   return Boolean(active);
 }
+
+$('runs-more').addEventListener('click', () => { runsShown += 10; route(); });
 
 $('form').addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -721,7 +730,10 @@ async function route() {
   const run = location.hash.match(/^#\/run\/(\d{8}-\d{6})$/);
   if (/^#\/rules/.test(location.hash)) { location.replace('#/edit/rules'); return; } // old links
   const edit = location.hash.match(/^#\/edit\/([\w-]+)(?:\/(\d+))?$/);
+  const historyPage = location.hash === '#/history';
   $('list-view').hidden = Boolean(run || edit);
+  $('new-job').hidden = historyPage;
+  $('history-back').hidden = !historyPage;
   $('detail-view').hidden = !run;
   $('rules-view').hidden = !edit;
   highlightTab();
@@ -732,7 +744,7 @@ async function route() {
   }
   let active = false;
   try {
-    active = run ? await refreshDetail(run[1]) : await refreshList();
+    active = run ? await refreshDetail(run[1]) : await refreshList(historyPage);
   } catch (err) {
     console.error(err);
   }
