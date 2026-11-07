@@ -109,6 +109,7 @@ printf "Subject: test\n\nhi" | msmtp you@gmail.com
 | `presets` | Quick-pick request chips shown in the UI. |
 | `items.label` | Heading for the per-item list on a run page (e.g. `"Jobs found"`). |
 | `itemActions` | Buttons shown on each item. See [Item actions](#item-actions). |
+| `tracker.label` | Name of the tab that lists applied/evaluated items. Default `"Tracker"`. See [Tracker](#tracker). |
 | `pasteAction` | Optional second button on the New job card for long pasted text, e.g. a job description. See [Pasted text](#pasted-text). |
 
 Relative paths are resolved from the repo folder. Set `RUNNER_CONFIG=/path/to/config.json` to use a different config file.
@@ -137,6 +138,15 @@ When Claude lists `items` in `meta.json`, the run page shows them with one butto
   - The button shows Queued…, then the `runningLabel`, then the `doneLabel` plus the job's `badge`. Clicking it after it's done opens the result in a large dialog.
 - Item data always comes from the run's `meta.json` on the server; the browser only sends the item's position in the list.
 - Item state is kept in `runs/items.json`, keyed by the item's URL. A job found again in a later run keeps its Applied/Evaluated state.
+
+## Tracker
+
+The **Tracker** tab lists every item you have acted on across all runs: items where a `command` action succeeded (e.g. Applied), items with a linked `job` (e.g. Evaluated), and evaluations of pasted text.
+
+- Columns: title, company, the date the item was first scanned, and one column per item action (with the applied date and note, or the evaluation badge).
+- Filters: company, job title, description (matches item fields, notes, and the first part of the evaluation result or pasted text), status (has/hasn't each action), scanned date range, and date range of the first `command` action.
+- Sort by any column (click its header, or use *Sort by*). Empty values always sort last. Filters and sort are remembered in the browser.
+- Action buttons work here too, so you can mark an evaluated job as applied without going back to its run.
 
 ## Pasted text
 

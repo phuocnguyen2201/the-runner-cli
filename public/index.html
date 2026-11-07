@@ -153,6 +153,25 @@
   dialog.big[open] { display: flex; flex-direction: column; }
   dialog.big .dlg-body { flex: 1; border-top: 1px solid var(--border); padding-top: 12px; }
   button.x { background: none; border: 0; color: var(--muted); font-size: 22px; line-height: 1; cursor: pointer; padding: 0 4px; }
+  .filters { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px 12px; }
+  .filters label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); min-width: 0; }
+  .filters input, .filters select { font: inherit; font-size: 14px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); width: 100%; min-width: 0; }
+  .filters input:focus, .filters select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  .filters .range { display: flex; gap: 6px; align-items: center; }
+  .filters .range span { color: var(--muted); }
+  table.tracker { width: 100%; border-collapse: collapse; font-size: 14px; }
+  table.tracker th { text-align: left; color: var(--muted); font-weight: 600; white-space: nowrap; }
+  table.tracker th, table.tracker td { padding: 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  table.tracker tr:last-child td { border-bottom: 0; }
+  table.tracker th button { background: none; border: 0; padding: 0; font: inherit; color: inherit; cursor: pointer; }
+  table.tracker th button:hover, table.tracker th.sorted button { color: var(--text); }
+  table.tracker td.t-title { min-width: 200px; overflow-wrap: anywhere; }
+  table.tracker td.t-title a { color: var(--accent); font-weight: 600; }
+  table.tracker td.t-title .sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  table.tracker td.nowrap { white-space: nowrap; }
+  table.tracker td .act { font-size: 12px; padding: 4px 10px; }
+  table.tracker .note-line { font-size: 12px; color: var(--muted); max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  mark { background: color-mix(in srgb, var(--accent) 25%, transparent); color: inherit; border-radius: 2px; }
   @media (max-width: 600px) {
     dialog.big { width: 100vw; height: 100vh; max-width: 100vw; max-height: 100vh; border-radius: 0; margin: 0; }
   }
@@ -167,6 +186,7 @@
     </div>
     <nav class="tabs" id="tabs">
       <a href="#" id="tab-runs" class="on">Runs</a>
+      <a href="#/tracker" id="tab-tracker">Tracker</a>
     </nav>
   </header>
 
@@ -237,6 +257,29 @@
     <div class="card">
       <h2>Log</h2>
       <pre class="log" id="d-log"></pre>
+    </div>
+  </section>
+  <section id="tracker-view" hidden>
+    <div class="card">
+      <h2>Filter &amp; sort</h2>
+      <div class="filters" id="filters">
+        <label>Company<input type="search" id="f-company" placeholder="e.g. Acme"></label>
+        <label>Job title<input type="search" id="f-title" placeholder="e.g. frontend"></label>
+        <label>Description<input type="search" id="f-desc" placeholder="words in the JD, evaluation or note"></label>
+        <label>Status<select id="f-status"><option value="">All tracked</option></select></label>
+        <label>Scanned<span class="range"><input type="date" id="f-scan-from" aria-label="Scanned from"><span>–</span><input type="date" id="f-scan-to" aria-label="Scanned to"></span></label>
+        <label id="f-applied-wrap"><span id="f-applied-label">Applied</span><span class="range"><input type="date" id="f-applied-from" aria-label="Applied from"><span>–</span><input type="date" id="f-applied-to" aria-label="Applied to"></span></label>
+        <label>Sort by<span class="range"><select id="f-sort"></select><button class="ghost" type="button" id="f-dir" title="Toggle direction" style="padding:6px 10px">↓</button></span></label>
+      </div>
+      <div class="row">
+        <span class="muted" id="t-count" style="font-size:14px"></span>
+        <button class="ghost" type="button" id="f-reset" style="margin-left:auto">Clear filters</button>
+      </div>
+    </div>
+    <div class="card">
+      <h2 id="t-heading">Tracked</h2>
+      <div class="table-wrap"><table class="tracker" id="t-table"></table></div>
+      <div class="empty" id="t-empty" hidden></div>
     </div>
   </section>
   <section id="rules-view" hidden>
@@ -353,6 +396,7 @@ async function loadConfig() {
     a.textContent = g.label;
     $('tabs').appendChild(a);
   }
+  setupTracker();
   highlightTab();
   $('project').textContent = cfg.project;
   $('hint').textContent = `timeout ${cfg.timeout}${cfg.mail ? ' · result emailed' : ''}`;
@@ -515,7 +559,7 @@ const ITEM_SKIP = new Set(['title', 'url', 'company']);
 const FAILED = ['failed', 'cancelled', 'timeout', 'busy', 'unknown'];
 let itemsCtx = { runId: null, items: [] };
 
-function actionButton(action, st, idx) {
+function actionButton(action, st, idx, runId = '') {
   let cls = '', label = action.label;
   if (action.type === 'job') {
     if (st && ACTIVE.includes(st.state)) { cls = 'busy'; label = st.state === 'queued' ? 'Queued…' : action.runningLabel; }
@@ -523,7 +567,7 @@ function actionButton(action, st, idx) {
     else if (st && FAILED.includes(st.state)) { cls = 'failed'; label = `${action.label} (retry)`; }
   } else if (st?.state === 'done') { cls = 'done'; label = action.doneLabel; }
   else if (st?.state === 'failed') { cls = 'failed'; label = `${action.label} (retry)`; }
-  return `<button type="button" class="act ${cls}" data-idx="${idx}" data-action="${esc(action.id)}">${esc(label)}</button>`;
+  return `<button type="button" class="act ${cls}" data-run="${esc(runId)}" data-idx="${idx}" data-action="${esc(action.id)}">${esc(label)}</button>`;
 }
 
 function renderItems(runId, items) {
@@ -539,7 +583,7 @@ function renderItems(runId, items) {
     const acts = (appCfg.itemActions || []).map((a) => {
       const st = states?.[a.id];
       if (a.type === 'job' && st && ACTIVE.includes(st.state)) busy = true;
-      return actionButton(a, st, index);
+      return actionButton(a, st, index, runId);
     }).join('');
     return `<li class="item">
       <div class="info">${title}${item.company ? ` <span class="company">· ${esc(item.company)}</span>` : ''}
@@ -551,28 +595,34 @@ function renderItems(runId, items) {
   return busy;
 }
 
-$('d-items').addEventListener('click', async (e) => {
+$('d-items').addEventListener('click', (e) => {
   const btn = e.target.closest('button.act');
   if (!btn) return;
   const idx = Number(btn.dataset.idx);
+  handleAction(btn, itemsCtx.runId, idx, itemsCtx.items.find((x) => x.index === idx));
+});
+
+// entry: { item, states }. runId/idx point at the item in a run's meta.json (null: view only).
+function handleAction(btn, runId, idx, entry) {
   const action = (appCfg.itemActions || []).find((a) => a.id === btn.dataset.action);
-  const entry = itemsCtx.items.find((x) => x.index === idx);
   if (!action || !entry) return;
   const st = entry.states?.[action.id];
 
   if (action.type === 'job') {
     if (st && ACTIVE.includes(st.state)) return openRunInfo(action, st);
     if (st?.state === 'done') return openResultDialog(entry.item, st);
-    return runItemAction(idx, action, {});
+    if (runId == null) return;
+    return runItemAction(runId, idx, action, {});
   }
   if (st?.state === 'done') return openNoteInfo(action, entry.item, st);
-  if (action.askNote) return openNoteDialog(idx, action, entry.item);
-  if (confirm(`${action.label}: ${entry.item.title || ''}?`)) runItemAction(idx, action, {});
-});
+  if (runId == null) return;
+  if (action.askNote) return openNoteDialog(runId, idx, action, entry.item);
+  if (confirm(`${action.label}: ${entry.item.title || ''}?`)) runItemAction(runId, idx, action, {});
+}
 
-async function runItemAction(idx, action, body) {
+async function runItemAction(runId, idx, action, body) {
   try {
-    await api(`/api/runs/${itemsCtx.runId}/items/${idx}/actions/${action.id}`, { method: 'POST', body: JSON.stringify(body) });
+    await api(`/api/runs/${runId}/items/${idx}/actions/${action.id}`, { method: 'POST', body: JSON.stringify(body) });
     return true;
   } catch (err) {
     alert(err.message);
@@ -582,7 +632,7 @@ async function runItemAction(idx, action, body) {
   }
 }
 
-function openNoteDialog(idx, action, item) {
+function openNoteDialog(runId, idx, action, item) {
   const dlg = $('note-dialog');
   $('note-title').textContent = action.label;
   $('note-sub').textContent = [item.title, item.company].filter(Boolean).join(' · ');
@@ -592,7 +642,7 @@ function openNoteDialog(idx, action, item) {
   dlg.returnValue = '';
   dlg.onclose = async () => {
     if (dlg.returnValue !== 'save') return;
-    await runItemAction(idx, action, { note: $('note-text').value.trim(), date: $('note-date').value });
+    await runItemAction(runId, idx, action, { note: $('note-text').value.trim(), date: $('note-date').value });
   };
   dlg.showModal();
   $('note-text').focus();
@@ -635,6 +685,190 @@ async function openResultDialog(item, st) {
   }
 }
 
+
+// ── tracker view ───────────────────────────────────────────────────────────
+
+const TRACKER_KEY = 'tracker-filters';
+const FILTER_IDS = ['f-company', 'f-title', 'f-desc', 'f-status', 'f-scan-from', 'f-scan-to', 'f-applied-from', 'f-applied-to', 'f-sort'];
+let trackerCtx = { items: [] };
+let sortDir = 'desc';
+
+const pad2 = (n) => String(n).padStart(2, '0');
+const localDay = (iso) => {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? '' : `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+};
+function fmtDay(day) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day || '')) return '';
+  const [y, m, d] = day.split('-').map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+}
+const commandAction = () => (appCfg.itemActions || []).find((a) => a.type === 'command');
+
+function setupTracker() {
+  const actions = appCfg.itemActions || [];
+  $('tab-tracker').textContent = appCfg.trackerLabel || 'Tracker';
+  $('t-heading').dataset.label = appCfg.trackerLabel || 'Tracker';
+  $('f-status').innerHTML = '<option value="">All tracked</option>' + actions.map((a) =>
+    `<option value="has:${esc(a.id)}">${esc(a.doneLabel)}</option><option value="not:${esc(a.id)}">Not ${esc(a.label.toLowerCase())}</option>`).join('');
+  const cmd = commandAction();
+  $('f-applied-wrap').hidden = !cmd;
+  if (cmd) $('f-applied-label').textContent = `${cmd.label} date`;
+  $('f-sort').innerHTML = [
+    ['scanned', 'Date scanned'],
+    ...actions.map((a) => [`a:${a.id}`, a.type === 'command' ? `${a.label} date` : `${a.label} result`]),
+    ['company', 'Company'],
+    ['title', 'Job title'],
+  ].map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join('');
+
+  try {
+    const saved = JSON.parse(localStorage.getItem(TRACKER_KEY) || 'null');
+    if (saved) {
+      for (const id of FILTER_IDS) if (saved[id] != null) $(id).value = saved[id];
+      if (!$('f-sort').value) $('f-sort').value = 'scanned';
+      if (saved.dir === 'asc' || saved.dir === 'desc') sortDir = saved.dir;
+    }
+  } catch {}
+  $('f-dir').textContent = sortDir === 'asc' ? '↑' : '↓';
+
+  $('filters').addEventListener('input', onFilterChange);
+  $('f-dir').addEventListener('click', () => { sortDir = sortDir === 'asc' ? 'desc' : 'asc'; onFilterChange(); });
+  $('f-reset').addEventListener('click', () => {
+    for (const id of FILTER_IDS) if (id !== 'f-sort') $(id).value = '';
+    onFilterChange();
+  });
+  $('t-table').addEventListener('click', (e) => {
+    const th = e.target.closest('th[data-sort] button');
+    if (th) {
+      const key = th.parentElement.dataset.sort;
+      if ($('f-sort').value === key) sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+      else { $('f-sort').value = key; sortDir = ['company', 'title'].includes(key) ? 'asc' : 'desc'; }
+      return onFilterChange();
+    }
+    const btn = e.target.closest('button.act');
+    if (!btn) return;
+    const entry = trackerCtx.items.find((x) => x.key === btn.dataset.key);
+    if (entry) handleAction(btn, entry.runId, entry.index, entry);
+  });
+}
+
+function onFilterChange() {
+  $('f-dir').textContent = sortDir === 'asc' ? '↑' : '↓';
+  try {
+    const saved = Object.fromEntries(FILTER_IDS.map((id) => [id, $(id).value]));
+    localStorage.setItem(TRACKER_KEY, JSON.stringify({ ...saved, dir: sortDir }));
+  } catch {}
+  renderTracker();
+}
+
+async function refreshTracker() {
+  const { items } = await api('/api/tracker');
+  trackerCtx = { items };
+  renderTracker();
+  return items.some((x) => Object.values(x.states || {}).some((st) => st && ACTIVE.includes(st.state)));
+}
+
+const words = (q) => q.toLowerCase().split(/\s+/).filter(Boolean);
+const hasAll = (text, ws) => { const t = String(text || '').toLowerCase(); return ws.every((w) => t.includes(w)); };
+const inRange = (day, from, to) => (!from && !to) || (day && (!from || day >= from) && (!to || day <= to));
+
+function sortValue(x, key) {
+  if (key === 'scanned') return x.scannedAt ? Date.parse(x.scannedAt) : null;
+  if (key === 'company') return (x.item.company || '').toLowerCase() || null;
+  if (key === 'title') return (x.item.title || '').toLowerCase() || null;
+  const action = (appCfg.itemActions || []).find((a) => `a:${a.id}` === key);
+  const st = action && x.states?.[action.id];
+  if (!st) return null;
+  if (action.type === 'command') return st.date || localDay(st.at) || null;
+  const n = parseFloat(String(st.badge ?? '').replace(',', '.'));
+  return Number.isFinite(n) ? n : (st.badge || st.state || null);
+}
+
+function filteredItems() {
+  const company = words($('f-company').value), title = words($('f-title').value), desc = words($('f-desc').value);
+  const status = $('f-status').value;
+  const cmd = commandAction();
+  const [sf, st, af, at] = ['f-scan-from', 'f-scan-to', 'f-applied-from', 'f-applied-to'].map((id) => $(id).value);
+  const list = trackerCtx.items.filter((x) => {
+    const it = x.item;
+    if (!hasAll(it.company, company) || !hasAll(it.title, title)) return false;
+    if (desc.length && !hasAll(`${Object.values(it).join(' ')}\n${x.text}`, desc)) return false;
+    if (status) {
+      const [kind, id] = status.split(':');
+      if (kind === 'has' && !x.states?.[id]) return false;
+      if (kind === 'not' && x.states?.[id]) return false;
+    }
+    if (!inRange(localDay(x.scannedAt), sf, st)) return false;
+    if (cmd) {
+      const a = x.states?.[cmd.id];
+      if (!inRange(a ? (a.date || localDay(a.at)) : '', af, at)) return false;
+    }
+    return true;
+  });
+  const key = $('f-sort').value || 'scanned';
+  const dir = sortDir === 'asc' ? 1 : -1;
+  return list.sort((a, b) => {
+    const va = sortValue(a, key), vb = sortValue(b, key);
+    if (va == null && vb == null) return 0;
+    if (va == null) return 1; // empty values always last
+    if (vb == null) return -1;
+    if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * dir;
+    return String(va).localeCompare(String(vb)) * dir;
+  });
+}
+
+// Escapes text and marks the filter words in it.
+function hl(text, ws) {
+  const s = String(text ?? '');
+  if (!ws.length || !s) return esc(s);
+  const re = new RegExp(`(${ws.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`, 'gi');
+  return s.split(re).map((part, i) => (i % 2 ? `<mark>${esc(part)}</mark>` : esc(part))).join('');
+}
+
+function renderTracker() {
+  const actions = appCfg.itemActions || [];
+  const list = filteredItems();
+  const total = trackerCtx.items.length;
+  $('t-heading').textContent = `${$('t-heading').dataset.label || 'Tracker'} (${total})`;
+  $('t-count').textContent = list.length === total ? `${total} item${total === 1 ? '' : 's'}` : `Showing ${list.length} of ${total}`;
+  $('t-empty').hidden = list.length > 0;
+  $('t-empty').textContent = total ? 'Nothing matches these filters.' : 'Nothing tracked yet. Items show up here once you apply to or evaluate them.';
+  if (!list.length) { $('t-table').innerHTML = ''; return; }
+
+  const sortKey = $('f-sort').value || 'scanned';
+  const arrow = sortDir === 'asc' ? ' ↑' : ' ↓';
+  const th = (key, label) => key
+    ? `<th data-sort="${esc(key)}" class="${sortKey === key ? 'sorted' : ''}"><button type="button">${esc(label)}${sortKey === key ? arrow : ''}</button></th>`
+    : `<th>${esc(label)}</th>`;
+  const qt = words($('f-title').value), qc = words($('f-company').value);
+
+  $('t-table').innerHTML = `<thead><tr>${th('title', 'Job title')}${th('company', 'Company')}${th('scanned', 'Scanned')}${
+    actions.map((a) => th(`a:${a.id}`, a.type === 'command' ? a.doneLabel.replace(/\s*✓$/, '') : a.doneLabel)).join('')}</tr></thead><tbody>${
+    list.map((x) => {
+      const it = x.item;
+      const title = it.url
+        ? `<a href="${esc(it.url)}" target="_blank" rel="noopener noreferrer">${hl(it.title || it.url, qt)}</a>`
+        : `<strong>${hl(it.title || '(untitled)', qt)}</strong>`;
+      const sub = [it.location ? esc(it.location) : '', x.runId ? `<a class="back" href="#/run/${esc(x.runId)}" style="font-size:12px">found in run</a>` : ''].filter(Boolean);
+      const cells = actions.map((a) => {
+        const st = x.states?.[a.id];
+        if (!st && x.runId == null) return '<td class="muted">—</td>';
+        const btn = actionButton(a, st, x.index, x.runId ?? '').replace('<button ', `<button data-key="${esc(x.key)}" `);
+        if (a.type === 'command' && st) {
+          return `<td class="nowrap">${btn}<div class="note-line">${esc(fmtDay(st.date) || fmtDate(st.at))}</div>${
+            st.note ? `<div class="note-line" title="${esc(st.note)}">${esc(st.note)}</div>` : ''}</td>`;
+        }
+        return `<td class="nowrap">${btn}</td>`;
+      }).join('');
+      return `<tr>
+        <td class="t-title">${title}${sub.length ? `<div class="sub">${sub.join(' · ')}</div>` : ''}</td>
+        <td>${hl(it.company || '', qc) || '<span class="muted">—</span>'}</td>
+        <td class="nowrap">${esc(fmtDay(localDay(x.scannedAt))) || '<span class="muted">—</span>'}</td>
+        ${cells}
+      </tr>`;
+    }).join('')}</tbody>`;
+}
 
 // ── rules view ─────────────────────────────────────────────────────────────
 
@@ -759,7 +993,8 @@ let lastHash = location.hash;
 
 function highlightTab() {
   const group = location.hash.match(/^#\/edit\/([\w-]+)/)?.[1];
-  $('tabs').querySelectorAll('a').forEach((a) => a.classList.toggle('on', group ? a.dataset.group === group : a.id === 'tab-runs'));
+  const current = group ? null : location.hash === '#/tracker' ? 'tab-tracker' : 'tab-runs';
+  $('tabs').querySelectorAll('a').forEach((a) => a.classList.toggle('on', group ? a.dataset.group === group : a.id === current));
 }
 
 async function route() {
@@ -768,7 +1003,9 @@ async function route() {
   if (/^#\/rules/.test(location.hash)) { location.replace('#/edit/rules'); return; } // old links
   const edit = location.hash.match(/^#\/edit\/([\w-]+)(?:\/(\d+))?$/);
   const historyPage = location.hash === '#/history';
-  $('list-view').hidden = Boolean(run || edit);
+  const tracker = location.hash === '#/tracker';
+  $('list-view').hidden = Boolean(run || edit || tracker);
+  $('tracker-view').hidden = !tracker;
   $('new-job').hidden = historyPage;
   $('history-back').hidden = !historyPage;
   $('detail-view').hidden = !run;
@@ -781,7 +1018,7 @@ async function route() {
   }
   let active = false;
   try {
-    active = run ? await refreshDetail(run[1]) : await refreshList(historyPage);
+    active = run ? await refreshDetail(run[1]) : tracker ? await refreshTracker() : await refreshList(historyPage);
   } catch (err) {
     console.error(err);
   }

@@ -50,6 +50,7 @@ const server = createServer(async (req, res) => {
         timeout: cfg.timeout,
         groups: fileGroups(cfg),
         itemsLabel: cfg.items?.label || 'Items',
+        trackerLabel: cfg.tracker?.label || 'Tracker',
         itemActions: publicActions(cfg),
         pasteAction: cfg.pasteAction ? { label: cfg.pasteAction.label || 'Evaluate pasted text' } : null,
       });
@@ -71,6 +72,9 @@ const server = createServer(async (req, res) => {
     if (req.method === 'GET' && path === '/api/runs') {
       const limit = Number(url.searchParams.get('limit')) || Infinity;
       return json(res, 200, { active: activeRunId(), ...listRuns(limit) });
+    }
+    if (req.method === 'GET' && path === '/api/tracker') {
+      return json(res, 200, { active: activeRunId(), items: trackedItems() });
     }
     if (req.method === 'POST' && path === '/api/runs') {
       return startRun(req, res);
@@ -163,6 +167,7 @@ async function itemAction(req, res, runId, index, actionId) {
   const item = cleanItem(raw);
   const key = itemKey(item);
   const body = await readBody(req);
+  const snapshot = { _item: item, _src: { runId, index } };
 
   if (action.type === 'command') {
     const date = /^\d{4}-\d{2}-\d{2}$/.test(body.date || '') ? body.date : new Date().toISOString().slice(0, 10);
@@ -170,7 +175,7 @@ async function itemAction(req, res, runId, index, actionId) {
     const result = await runCommandAction(cfg, action, { item, note, date, action: action.id });
     const state = updateItemState(cfg, key, action.id, {
       state: result.ok ? 'done' : 'failed', at: new Date().toISOString(), date, note, output: result.output,
-    });
+    }, snapshot);
     return json(res, result.ok ? 200 : 500, { ...state[action.id], error: result.ok ? undefined : `Action failed: ${result.output || `exit ${result.code}`}` });
   }
 
@@ -184,7 +189,7 @@ async function itemAction(req, res, runId, index, actionId) {
   const runIdNew = spawnJob(request, `action:${action.id}`, {
     queue: true, action: action.id, itemKey: key, promptFile: action.promptFile || null,
   });
-  updateItemState(cfg, key, action.id, { runId: runIdNew, at: new Date().toISOString() });
+  updateItemState(cfg, key, action.id, { runId: runIdNew, at: new Date().toISOString() }, snapshot);
   json(res, 202, jobState(runIdNew));
 }
 
@@ -212,6 +217,93 @@ function runItems(dir) {
     }
     return { index, item, states };
   });
+}
+
+// Tracker: every item with a finished command action (e.g. Applied) or a linked job (e.g. Evaluated),
+// plus pasted-text evaluations, with the date the item was first seen in a run.
+const TEXT_LIMIT = 4000;
+
+function trackedItems() {
+  const store = readStore(cfg);
+  const actions = itemActions(cfg);
+  const pasteAction = actions.find((a) => a.type === 'job'); // pasted evaluations show in this column
+  const ids = readdirSync(cfg.runsDir).filter((name) => RUN_ID_RE.test(name)).sort(); // oldest first
+  const firstSeen = new Map(); // item key -> { item, runId, index, at, trigger }
+  const pastes = [];
+
+  for (const id of ids) {
+    const dir = runDir(cfg, id);
+    const status = readJson(join(dir, 'status.json'), {});
+    const items = readJson(join(dir, 'meta.json'), null)?.items;
+    if (status.trigger === 'paste') pastes.push(id);
+    if (!Array.isArray(items)) continue;
+    items.forEach((raw, index) => {
+      const item = cleanItem(raw);
+      const key = itemKey(item);
+      if (store[key] && !firstSeen.has(key)) {
+        firstSeen.set(key, { item, runId: id, index, at: status.startedAt || status.createdAt || null, trigger: status.trigger });
+      }
+    });
+  }
+
+  const out = [];
+  const keys = new Set();
+  for (const [key, saved] of Object.entries(store)) {
+    const seen = firstSeen.get(key);
+    const src = seen || (saved._item ? { item: saved._item, runId: saved._src?.runId ?? null, index: saved._src?.index ?? null, at: null } : null);
+    if (!src) continue;
+    const states = {};
+    let tracked = false;
+    for (const a of actions) {
+      const s = saved[a.id];
+      if (a.type === 'job') {
+        let runId = s?.runId;
+        if (!runId && a === pasteAction && seen?.trigger === 'paste') runId = seen.runId; // evaluated by pasting
+        states[a.id] = runId && existsSync(runDir(cfg, runId)) ? jobState(runId) : null;
+      } else {
+        states[a.id] = s?.state === 'done' ? { state: s.state, at: s.at, date: s.date, note: s.note } : null;
+      }
+      if (states[a.id]) tracked = true;
+    }
+    if (!tracked) continue;
+    keys.add(key);
+    out.push(trackerEntry(key, src, states));
+  }
+
+  // Pasted evaluations whose item was never acted on.
+  for (const id of pastes) {
+    if (!pasteAction) break;
+    const st = jobState(id);
+    if (!['done', 'queued', 'running'].includes(st.state)) continue;
+    const dir = runDir(cfg, id);
+    const status = readJson(join(dir, 'status.json'), {});
+    const raw = readJson(join(dir, 'meta.json'), null)?.items?.[0];
+    const item = cleanItem(raw);
+    const key = raw ? itemKey(item) : `paste:${id}`;
+    if (keys.has(key)) continue;
+    if (!item.title) item.title = st.summary || 'Pasted text';
+    keys.add(key);
+    const states = Object.fromEntries(actions.map((a) => [a.id, a === pasteAction ? st : null]));
+    out.push(trackerEntry(key, { item, runId: raw ? id : null, index: raw ? 0 : null, at: status.startedAt || status.createdAt || null, pasteRunId: id }, states));
+  }
+  return out;
+}
+
+function trackerEntry(key, src, states) {
+  const parts = [src.item.description, ...Object.values(states).flatMap((s) => [s?.summary, s?.note])];
+  for (const s of Object.values(states)) {
+    if (s?.runId && s.state === 'done') parts.push(readText(join(runDir(cfg, s.runId), 'result.md'))?.slice(0, TEXT_LIMIT));
+  }
+  if (src.pasteRunId) parts.push(readText(join(runDir(cfg, src.pasteRunId), 'input.md'))?.slice(0, TEXT_LIMIT));
+  return {
+    key,
+    item: src.item,
+    runId: src.runId ?? null, // run the item was found in; null when actions can't be run from here
+    index: src.index ?? null,
+    scannedAt: src.at ?? null,
+    states,
+    text: parts.filter(Boolean).join('\n'),
+  };
 }
 
 function cancelRun(res, dir) {
