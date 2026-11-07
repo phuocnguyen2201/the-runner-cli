@@ -106,7 +106,7 @@ printf "Subject: test\n\nhi" | msmtp you@gmail.com
 | `envFile` | Optional `KEY=VALUE` file loaded before running Claude, e.g. `CLAUDE_CODE_OAUTH_TOKEN`. |
 | `runsDir` | Where run history is stored. Default `./runs`. |
 | `mail` | `{ "to", "from", "command" }`. The command reads a full message on stdin (`msmtp -t`). Set it to `null` to disable email. Cancelled runs are not emailed. |
-| `presets` | Quick-pick request chips shown in the UI. |
+| `presets` | Starting request chips. After the first edit in the UI they live in `runs/presets.json`. See [Presets](#presets). |
 | `items.label` | Heading for the per-item list on a run page (e.g. `"Jobs found"`). |
 | `itemActions` | Buttons shown on each item. See [Item actions](#item-actions). |
 | `tracker.label` | Name of the tab that lists applied/evaluated items. Default `"Tracker"`. See [Tracker](#tracker). |
@@ -147,6 +147,21 @@ The **Tracker** tab lists every item you have acted on across all runs: items wh
 - Filters: company, job title, description (matches item fields, notes, and the first part of the evaluation result or pasted text), status (has/hasn't each action), scanned date range, and date range of the first `command` action.
 - Sort by any column (click its header, or use *Sort by*). Empty values always sort last. Filters and sort are remembered in the browser.
 - Action buttons work here too, so you can mark an evaluated job as applied without going back to its run.
+- The **⋯** button on each row has:
+  - **Details**: opens the row as an accordion with the item's history and dates: Scanned → Applied → Evaluated → Ghosted/Rejected → Revised.
+  - **Ghosted** / **Rejected**: records the date and an optional note (pick it again to change the date). *Clear ghosted/rejected* removes it.
+  - **Revise…**: the company came back (e.g. they couldn't find the right candidate). Adds a dated event; there can be several, and each can be removed in Details.
+- The Outcome column shows the current stage. A revision dated on or after the ghosted/rejected date re-opens the item (shown as *Revised*); ghosted/rejected items are dimmed. The Status filter and *Outcome date* sort use this stage.
+- Stored in `runs/items.json` as `_status` and `_revisions`.
+
+## Presets
+
+The request chips under **New job** are edited in the UI. Each chip has a **⋯** menu (*Update*, *Insert new after*, *Delete*), and **+ Preset** adds one at the end. A preset has two fields:
+
+- **Preset**: the request text the chip fills in.
+- **Search rule** (optional): written into `promptFile` inside a managed block (`<!-- presets:start -->` … `<!-- presets:end -->`, heading "Preset rules"). Claude follows it when the request is that preset. Every save keeps the previous prompt in the Rules page's version history. Don't edit inside the block by hand; it is rewritten on every preset change.
+
+Presets are stored in `runs/presets.json`. The first time, they are seeded from `presets` in `config.json`; after that, the config value is ignored. Cron runs without a request use the first preset.
 
 ## Pasted text
 

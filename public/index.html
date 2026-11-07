@@ -171,6 +171,42 @@
   table.tracker td.nowrap { white-space: nowrap; }
   table.tracker td .act { font-size: 12px; padding: 4px 10px; }
   table.tracker .note-line { font-size: 12px; color: var(--muted); max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  button.dots { background: none; border: 1px solid transparent; color: var(--muted); border-radius: 8px; width: 32px; height: 30px; font-size: 18px; line-height: 1; cursor: pointer; }
+  button.dots:hover, button.dots[aria-expanded="true"] { border-color: var(--border); color: var(--text); background: var(--surface-2); }
+  .menu { position: fixed; z-index: 20; min-width: 170px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 4px; box-shadow: 0 8px 24px rgba(0,0,0,.18); }
+  .menu button { display: block; width: 100%; text-align: left; background: none; border: 0; border-radius: 6px; padding: 7px 10px; font: inherit; font-size: 14px; color: var(--text); cursor: pointer; }
+  .menu button:hover, .menu button:focus-visible { background: var(--surface-2); outline: none; }
+  .menu button.on::after { content: ' ✓'; color: var(--muted); }
+  .menu hr { border: 0; border-top: 1px solid var(--border); margin: 4px 0; }
+  .s-rejected { color: var(--err); } .s-ghosted { color: var(--muted); } .s-revised { color: var(--run); }
+  table.tracker tr.expanded td { border-bottom-color: transparent; }
+  table.tracker tr.detail-row > td { padding: 0 8px 14px; }
+  ol.timeline { list-style: none; margin: 0; padding: 12px 16px; background: var(--surface-2); border-radius: 10px; display: grid; gap: 0; }
+  ol.timeline > li { position: relative; display: grid; grid-template-columns: 18px 130px 1fr; gap: 2px 10px; padding: 6px 0; }
+  ol.timeline > li::before { content: ''; position: absolute; left: 5px; top: 20px; bottom: -8px; border-left: 2px solid var(--border); }
+  ol.timeline > li:last-child::before { display: none; }
+  ol.timeline .dot { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--border); background: var(--surface); margin-top: 4px; position: relative; }
+  ol.timeline li.on .dot { border-color: currentColor; background: currentColor; }
+  ol.timeline li.on { color: var(--ok); } ol.timeline li.on.s-rejected { color: var(--err); } ol.timeline li.on.s-ghosted { color: var(--muted); } ol.timeline li.on.s-revised { color: var(--run); }
+  ol.timeline .step { font-weight: 600; color: var(--text); white-space: nowrap; }
+  ol.timeline li:not(.on) .step { color: var(--muted); font-weight: 500; }
+  ol.timeline .what { color: var(--text); font-size: 14px; min-width: 0; overflow-wrap: anywhere; }
+  ol.timeline .what .when { font-weight: 600; }
+  ol.timeline .what .line { color: var(--muted); font-size: 13px; }
+  ol.timeline .what a, ol.timeline .what button.link { color: var(--accent); font-size: 13px; }
+  button.link { background: none; border: 0; padding: 0; font: inherit; cursor: pointer; text-decoration: underline; }
+  button.link.rm { color: var(--muted) !important; text-decoration: none; margin-left: 6px; }
+  @media (max-width: 600px) { ol.timeline > li { grid-template-columns: 18px 1fr; } ol.timeline .what { grid-column: 2; } }
+  .preset { display: inline-flex; align-items: stretch; border: 1px solid var(--border); background: var(--surface-2); border-radius: 999px; overflow: hidden; }
+  .preset:hover { border-color: var(--accent); }
+  .preset .chip { border: 0; border-radius: 0; background: none; padding-right: 6px; }
+  .preset .chip.has-rule::after { content: ' ·'; color: var(--accent); font-weight: 700; }
+  .preset button.dots { width: 26px; height: auto; border: 0; border-left: 1px solid var(--border); border-radius: 0; font-size: 15px; }
+  .chip.add { border-style: dashed; background: none; color: var(--muted); }
+  dialog input[type=text] { width: 100%; font: inherit; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); }
+  dialog textarea.rule { min-height: 160px; font: 13px/1.5 var(--mono); }
+  dialog .hint { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  table.tracker tr.closed td:not(.t-out):not(.t-menu) { opacity: .55; }
   mark { background: color-mix(in srgb, var(--accent) 25%, transparent); color: inherit; border-radius: 2px; }
   @media (max-width: 600px) {
     dialog.big { width: 100vw; height: 100vh; max-width: 100vw; max-height: 100vh; border-radius: 0; margin: 0; }
@@ -327,6 +363,27 @@
   </form>
 </dialog>
 
+<div class="menu" id="menu" role="menu" hidden></div>
+
+<dialog id="preset-dialog">
+  <form method="dialog" id="preset-form">
+    <div class="dlg-head"><h3 id="preset-title">Preset</h3><button class="x" value="cancel" aria-label="Close" formnovalidate>×</button></div>
+    <div class="dlg-body">
+      <label for="preset-request">Preset</label>
+      <input type="text" id="preset-request" maxlength="500" required placeholder="e.g. scan frontend jobs in Helsinki">
+      <div class="hint">The request text. Clicking the chip puts this in the New job box.</div>
+      <label for="preset-rule">Search rule</label>
+      <textarea id="preset-rule" class="rule" maxlength="5000" placeholder="e.g. Only search LinkedIn and Duunitori. Keywords: React, TypeScript, frontend. Location: Helsinki, remote Finland. Skip senior/lead roles."></textarea>
+      <div class="hint" id="preset-rule-hint"></div>
+      <div class="error" id="preset-error"></div>
+    </div>
+    <div class="dlg-foot">
+      <button class="ghost" value="cancel" formnovalidate>Cancel</button>
+      <button class="primary" style="margin:0" value="save" id="preset-save">Save</button>
+    </div>
+  </form>
+</dialog>
+
 <dialog id="info-dialog">
   <div class="dlg-head"><h3 id="info-title"></h3><button class="x" onclick="this.closest('dialog').close()" aria-label="Close">×</button></div>
   <div class="dlg-body" id="info-body"></div>
@@ -405,11 +462,102 @@ async function loadConfig() {
     $('paste-eval').hidden = false;
     $('request').placeholder = `e.g. scan for today — or paste text and press “${cfg.pasteAction.label}”`;
   }
-  $('presets').innerHTML = cfg.presets.map((p) => `<button type="button" class="chip">${esc(p)}</button>`).join('');
-  $('presets').querySelectorAll('.chip').forEach((b) => b.addEventListener('click', () => {
-    $('request').value = b.textContent;
-    $('request').focus();
-  }));
+  presetList = cfg.presets.map((request) => ({ request, rule: '' }));
+  renderPresets();
+  loadPresets();
+}
+
+// ── presets: chip + ⋯ (edit / insert / delete), stored on the server with a search rule ──
+let presetList = [];
+
+async function loadPresets() {
+  try {
+    const { presets, promptFile } = await api('/api/presets');
+    presetList = presets;
+    appCfg.promptFile = promptFile;
+    renderPresets();
+  } catch (err) { console.error(err); }
+}
+
+function renderPresets() {
+  $('presets').innerHTML = presetList.map((p, i) => `<span class="preset">
+      <button type="button" class="chip ${p.rule ? 'has-rule' : ''}" data-i="${i}" title="${esc(p.rule ? `Rule: ${p.rule.slice(0, 200)}` : 'No search rule')}">${esc(p.request)}</button><button type="button" class="dots" data-i="${i}" aria-haspopup="menu" aria-expanded="false" title="Edit preset" aria-label="Preset options">⋯</button>
+    </span>`).join('') + '<button type="button" class="chip add" id="preset-add">+ Preset</button>';
+}
+
+$('presets').addEventListener('click', (e) => {
+  if (e.target.id === 'preset-add') return openPresetDialog(null, presetList.length);
+  const i = Number(e.target.dataset.i);
+  const p = presetList[i];
+  if (!p) return;
+  if (e.target.classList.contains('dots')) {
+    return openMenu(e.target, `preset:${i}`, [
+      { cmd: 'edit', label: 'Update' },
+      { cmd: 'insert', label: 'Insert new after' },
+      'sep',
+      { cmd: 'delete', label: 'Delete' },
+    ], (cmd) => {
+      if (cmd === 'edit') openPresetDialog(i);
+      else if (cmd === 'insert') openPresetDialog(null, i + 1);
+      else deletePreset(i);
+    });
+  }
+  $('request').value = p.request;
+  $('request').focus();
+});
+
+// index: preset to update, or null to insert at `at`.
+function openPresetDialog(index, at) {
+  const p = index == null ? { request: '', rule: '' } : presetList[index];
+  const dlg = $('preset-dialog');
+  $('preset-title').textContent = index == null ? 'New preset' : 'Update preset';
+  $('preset-request').value = p.request;
+  $('preset-rule').value = p.rule;
+  $('preset-rule').disabled = !appCfg.promptFile;
+  $('preset-rule-hint').textContent = appCfg.promptFile
+    ? `Written into ${appCfg.promptFile} under “Preset rules”. Claude follows it when the request is this preset.`
+    : 'No promptFile is configured, so rules cannot be saved.';
+  $('preset-error').textContent = '';
+  dlg.dataset.index = index == null ? '' : String(index);
+  dlg.dataset.at = String(at ?? '');
+  dlg.dataset.expect = index == null ? '' : p.request;
+  dlg.showModal();
+  $('preset-request').focus();
+}
+
+// Save keeps the dialog open on errors (e.g. duplicate text).
+$('preset-form').addEventListener('submit', async (e) => {
+  if (e.submitter?.value !== 'save') return;
+  e.preventDefault();
+  const dlg = $('preset-dialog');
+  const body = { request: $('preset-request').value.trim(), rule: $('preset-rule').value.trim() };
+  if (!body.request) { $('preset-error').textContent = 'Preset text is required.'; return; }
+  $('preset-save').disabled = true;
+  try {
+    const { presets } = dlg.dataset.index === ''
+      ? await api('/api/presets', { method: 'POST', body: JSON.stringify({ ...body, at: Number(dlg.dataset.at) }) })
+      : await api(`/api/presets/${dlg.dataset.index}`, { method: 'PUT', body: JSON.stringify({ ...body, expect: dlg.dataset.expect }) });
+    presetList = presets;
+    renderPresets();
+    dlg.close();
+  } catch (err) {
+    $('preset-error').textContent = err.message;
+  } finally {
+    $('preset-save').disabled = false;
+  }
+});
+
+async function deletePreset(i) {
+  const p = presetList[i];
+  if (!confirm(`Delete the preset “${p.request}”${p.rule ? ' and its search rule' : ''}?`)) return;
+  try {
+    const { presets } = await api(`/api/presets/${i}`, { method: 'DELETE', body: JSON.stringify({ expect: p.request }) });
+    presetList = presets;
+  } catch (err) {
+    alert(err.message);
+    await loadPresets();
+  }
+  renderPresets();
 }
 
 let runsShown = 4; // kept while browsing, so returning from a run keeps the expanded list
@@ -711,13 +859,15 @@ function setupTracker() {
   $('tab-tracker').textContent = appCfg.trackerLabel || 'Tracker';
   $('t-heading').dataset.label = appCfg.trackerLabel || 'Tracker';
   $('f-status').innerHTML = '<option value="">All tracked</option>' + actions.map((a) =>
-    `<option value="has:${esc(a.id)}">${esc(a.doneLabel)}</option><option value="not:${esc(a.id)}">Not ${esc(a.label.toLowerCase())}</option>`).join('');
+    `<option value="has:${esc(a.id)}">${esc(a.doneLabel)}</option><option value="not:${esc(a.id)}">Not ${esc(a.label.toLowerCase())}</option>`).join('') +
+    '<option value="out:none">Still open</option><option value="out:ghosted">Ghosted</option><option value="out:rejected">Rejected</option><option value="out:revised">Revised</option>';
   const cmd = commandAction();
   $('f-applied-wrap').hidden = !cmd;
   if (cmd) $('f-applied-label').textContent = `${cmd.label} date`;
   $('f-sort').innerHTML = [
     ['scanned', 'Date scanned'],
     ...actions.map((a) => [`a:${a.id}`, a.type === 'command' ? `${a.label} date` : `${a.label} result`]),
+    ['outcome', 'Outcome date'],
     ['company', 'Company'],
     ['title', 'Job title'],
   ].map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join('');
@@ -746,11 +896,203 @@ function setupTracker() {
       else { $('f-sort').value = key; sortDir = ['company', 'title'].includes(key) ? 'asc' : 'desc'; }
       return onFilterChange();
     }
+    const dots = e.target.closest('button.dots');
+    if (dots) return openRowMenu(dots);
     const btn = e.target.closest('button.act');
     if (!btn) return;
     const entry = trackerCtx.items.find((x) => x.key === btn.dataset.key);
     if (entry) handleAction(btn, entry.runId, entry.index, entry);
   });
+  $('t-table').addEventListener('click', (e) => {
+    const res = e.target.closest('button[data-result]');
+    if (res) {
+      const entry = trackerCtx.items.find((x) => x.key === res.dataset.key);
+      const st = entry?.states?.[res.dataset.result];
+      if (st) openResultDialog(entry.item, st);
+      return;
+    }
+    const rm = e.target.closest('button[data-rm-rev]');
+    if (rm) {
+      const entry = trackerCtx.items.find((x) => x.key === rm.dataset.key);
+      if (entry && confirm('Remove this revision?')) saveRevision(entry, { remove: Number(rm.dataset.rmRev) });
+    }
+  });
+  $('menu').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-cmd]');
+    if (!b) return;
+    const pick = menuState.onPick;
+    closeMenu();
+    pick?.(b.dataset.cmd);
+  });
+  document.addEventListener('click', (e) => {
+    if (!$('menu').hidden && !e.target.closest('#menu, button.dots')) closeMenu();
+  });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeMenu(); });
+  window.addEventListener('scroll', closeMenu, true);
+  window.addEventListener('resize', closeMenu);
+}
+
+// ── generic ⋯ menu ──
+// items: [{ cmd, label, on? } | 'sep']; onPick(cmd). Same button again closes it.
+const menuState = { owner: null, onPick: null };
+
+function openMenu(btn, ownerId, items, onPick) {
+  const wasOpen = menuState.owner === ownerId && !$('menu').hidden;
+  closeMenu();
+  if (wasOpen) return;
+  menuState.owner = ownerId;
+  menuState.onPick = onPick;
+  const menu = $('menu');
+  menu.innerHTML = items.map((it) => it === 'sep' ? '<hr>'
+    : `<button type="button" role="menuitem" data-cmd="${esc(it.cmd)}" class="${it.on ? 'on' : ''}">${esc(it.label)}</button>`).join('');
+  menu.hidden = false;
+  btn.setAttribute('aria-expanded', 'true');
+  const r = btn.getBoundingClientRect();
+  const m = menu.getBoundingClientRect();
+  menu.style.left = `${Math.max(8, Math.min(r.right - m.width, window.innerWidth - m.width - 8))}px`;
+  menu.style.top = `${r.bottom + m.height + 8 > window.innerHeight ? Math.max(8, r.top - m.height - 4) : r.bottom + 4}px`;
+  menu.querySelector('button')?.focus();
+}
+
+function closeMenu() {
+  if ($('menu').hidden) return;
+  $('menu').hidden = true;
+  document.querySelectorAll('button.dots[aria-expanded="true"]').forEach((b) => b.setAttribute('aria-expanded', 'false'));
+  menuState.owner = menuState.onPick = null;
+}
+
+// ── tracker rows: details, ghosted / rejected, revise ──
+const OUTCOME_LABEL = { ghosted: 'Ghosted', rejected: 'Rejected', revised: 'Revised' };
+const openRows = new Set(); // keys whose details are expanded (kept across refreshes)
+
+// Current stage: a revision dated on/after the ghosted/rejected date re-opens the item.
+function stageOf(x) {
+  const last = x.revisions?.at(-1);
+  if (last && (!x.outcome || last.date >= x.outcome.date)) return 'revised';
+  return x.outcome?.status || 'none';
+}
+const stageDate = (x) => {
+  const st = stageOf(x);
+  return st === 'revised' ? x.revisions.at(-1).date : st === 'none' ? null : x.outcome.date;
+};
+
+function openRowMenu(btn) {
+  const entry = trackerCtx.items.find((x) => x.key === btn.dataset.key);
+  if (!entry) return;
+  const items = [
+    { cmd: 'details', label: openRows.has(entry.key) ? 'Hide details' : 'Details' },
+    'sep',
+    { cmd: 'ghosted', label: 'Ghosted', on: entry.outcome?.status === 'ghosted' },
+    { cmd: 'rejected', label: 'Rejected', on: entry.outcome?.status === 'rejected' },
+    { cmd: 'revise', label: 'Revise…' },
+  ];
+  if (entry.outcome) items.push('sep', { cmd: 'clear', label: 'Clear ghosted/rejected' });
+  openMenu(btn, `row:${entry.key}`, items, (cmd) => {
+    if (cmd === 'details') { openRows.has(entry.key) ? openRows.delete(entry.key) : openRows.add(entry.key); renderTracker(); }
+    else if (cmd === 'revise') openReviseDialog(entry);
+    else if (cmd === 'clear') { if (confirm(`Clear the ${entry.outcome.status} status of “${entry.item.title || ''}”?`)) saveOutcome(entry, null); }
+    else openOutcomeDialog(entry, cmd);
+  });
+}
+
+// The note dialog, reused: title, preset values, placeholder, and what Save does.
+function noteDialog({ title, entry, date, note, placeholder, onSave }) {
+  const dlg = $('note-dialog');
+  const defaultPh = 'e.g. applied via company site, cover letter v2, contact: …';
+  $('note-title').textContent = title;
+  $('note-sub').textContent = [entry.item.title, entry.item.company].filter(Boolean).join(' · ');
+  $('note-date').value = date || localDay(new Date().toISOString());
+  $('note-text').value = note || '';
+  $('note-text').placeholder = placeholder || defaultPh;
+  $('note-error').textContent = '';
+  dlg.returnValue = '';
+  dlg.onclose = () => {
+    $('note-text').placeholder = defaultPh;
+    if (dlg.returnValue === 'save') onSave($('note-date').value, $('note-text').value.trim());
+  };
+  dlg.showModal();
+  $('note-date').focus();
+}
+
+function openOutcomeDialog(entry, status) {
+  const same = entry.outcome?.status === status;
+  noteDialog({
+    title: `Mark as ${OUTCOME_LABEL[status].toLowerCase()}`, entry,
+    date: same ? entry.outcome.date : '', note: same ? entry.outcome.note : '',
+    placeholder: status === 'rejected' ? 'e.g. rejection email after first interview' : 'e.g. no reply 3 weeks after applying',
+    onSave: (date, note) => saveOutcome(entry, status, date, note),
+  });
+}
+
+function openReviseDialog(entry) {
+  noteDialog({
+    title: 'Revise', entry,
+    placeholder: 'e.g. recruiter came back: they could not find the right candidate, second round on Monday',
+    onSave: (date, note) => saveRevision(entry, { date, note }),
+  });
+}
+
+async function saveOutcome(entry, status, date, note) {
+  try {
+    await api('/api/tracker/status', { method: 'POST', body: JSON.stringify({ key: entry.key, status, date, note }) });
+  } catch (err) {
+    alert(err.message);
+  }
+  route();
+}
+
+async function saveRevision(entry, body) {
+  try {
+    await api('/api/tracker/revisions', { method: 'POST', body: JSON.stringify({ key: entry.key, ...body }) });
+    openRows.add(entry.key); // show the new event
+  } catch (err) {
+    alert(err.message);
+  }
+  route();
+}
+
+// Accordion body: the item's history as five steps.
+function timelineHtml(x) {
+  const actions = appCfg.itemActions || [];
+  const step = (label, on, cls, what) =>
+    `<li class="${on ? 'on' : ''} ${cls || ''}"><span class="dot"></span><span class="step">${esc(label)}</span><div class="what">${what}</div></li>`;
+  const when = (text) => `<span class="when">${esc(text)}</span>`;
+  const line = (text) => (text ? `<div class="line">${esc(text)}</div>` : '');
+  const notYet = '<span class="muted">Not yet</span>';
+  const out = [];
+
+  out.push(step('Scanned', Boolean(x.scannedAt), '', x.scannedAt
+    ? `${when(fmtDate(x.scannedAt))}${x.runId ? ` · <a href="#/run/${esc(x.runId)}">open run</a>` : ' <span class="muted">· pasted text</span>'}`
+    : notYet));
+
+  for (const a of actions.filter((a) => a.type === 'command')) {
+    const st = x.states?.[a.id];
+    out.push(step(a.doneLabel.replace(/\s*✓$/, ''), Boolean(st), '', st
+      ? `${when(fmtDay(st.date) || fmtDate(st.at))}${line(st.note)}`
+      : notYet));
+  }
+  for (const a of actions.filter((a) => a.type === 'job')) {
+    const st = x.states?.[a.id];
+    let what = notYet;
+    if (st && ACTIVE.includes(st.state)) what = `<span class="muted">${esc(st.state === 'queued' ? 'Queued…' : a.runningLabel)}</span>`;
+    else if (st?.state === 'done') {
+      what = `${when(fmtDate(st.finishedAt || st.startedAt))}${st.badge ? ` <span class="badge s-done">${esc(st.badge)}</span>` : ''}${line(st.summary)}
+        <button type="button" class="link" data-result="${esc(a.id)}" data-key="${esc(x.key)}">Open result</button>`;
+    } else if (st) what = `<span class="badge s-failed">${esc(st.state)}</span>`;
+    out.push(step(a.doneLabel, st?.state === 'done', '', what));
+  }
+
+  const o = x.outcome;
+  out.push(step('Ghosted / Rejected', Boolean(o), o ? `s-${o.status}` : '', o
+    ? `<span class="badge s-${esc(o.status)}">${esc(OUTCOME_LABEL[o.status])}</span> ${when(fmtDay(o.date))}${line(o.note)}`
+    : '<span class="muted">—</span>'));
+
+  const revs = x.revisions || [];
+  out.push(step('Revised', revs.length > 0, 's-revised', revs.length
+    ? revs.map((r, i) => `<div>${when(fmtDay(r.date))}<button type="button" class="link rm" data-rm-rev="${i}" data-key="${esc(x.key)}" title="Remove" aria-label="Remove revision">×</button>${line(r.note)}</div>`).join('')
+    : '<span class="muted">— use ⋯ → Revise when the company comes back</span>'));
+
+  return `<ol class="timeline">${out.join('')}</ol>`;
 }
 
 function onFilterChange() {
@@ -777,6 +1119,7 @@ function sortValue(x, key) {
   if (key === 'scanned') return x.scannedAt ? Date.parse(x.scannedAt) : null;
   if (key === 'company') return (x.item.company || '').toLowerCase() || null;
   if (key === 'title') return (x.item.title || '').toLowerCase() || null;
+  if (key === 'outcome') return stageDate(x);
   const action = (appCfg.itemActions || []).find((a) => `a:${a.id}` === key);
   const st = action && x.states?.[action.id];
   if (!st) return null;
@@ -796,6 +1139,7 @@ function filteredItems() {
     if (desc.length && !hasAll(`${Object.values(it).join(' ')}\n${x.text}`, desc)) return false;
     if (status) {
       const [kind, id] = status.split(':');
+      if (kind === 'out' && stageOf(x) !== id) return false;
       if (kind === 'has' && !x.states?.[id]) return false;
       if (kind === 'not' && x.states?.[id]) return false;
     }
@@ -834,6 +1178,7 @@ function renderTracker() {
   $('t-count').textContent = list.length === total ? `${total} item${total === 1 ? '' : 's'}` : `Showing ${list.length} of ${total}`;
   $('t-empty').hidden = list.length > 0;
   $('t-empty').textContent = total ? 'Nothing matches these filters.' : 'Nothing tracked yet. Items show up here once you apply to or evaluate them.';
+  if (menuState.owner?.startsWith('row:') && !list.some((x) => `row:${x.key}` === menuState.owner)) closeMenu(); // a refresh keeps an open menu for a row still shown
   if (!list.length) { $('t-table').innerHTML = ''; return; }
 
   const sortKey = $('f-sort').value || 'scanned';
@@ -844,7 +1189,7 @@ function renderTracker() {
   const qt = words($('f-title').value), qc = words($('f-company').value);
 
   $('t-table').innerHTML = `<thead><tr>${th('title', 'Job title')}${th('company', 'Company')}${th('scanned', 'Scanned')}${
-    actions.map((a) => th(`a:${a.id}`, a.type === 'command' ? a.doneLabel.replace(/\s*✓$/, '') : a.doneLabel)).join('')}</tr></thead><tbody>${
+    actions.map((a) => th(`a:${a.id}`, a.type === 'command' ? a.doneLabel.replace(/\s*✓$/, '') : a.doneLabel)).join('')}${th('outcome', 'Outcome')}<th><span hidden>Menu</span></th></tr></thead><tbody>${
     list.map((x) => {
       const it = x.item;
       const title = it.url
@@ -855,18 +1200,22 @@ function renderTracker() {
         const st = x.states?.[a.id];
         if (!st && x.runId == null) return '<td class="muted">—</td>';
         const btn = actionButton(a, st, x.index, x.runId ?? '').replace('<button ', `<button data-key="${esc(x.key)}" `);
-        if (a.type === 'command' && st) {
-          return `<td class="nowrap">${btn}<div class="note-line">${esc(fmtDay(st.date) || fmtDate(st.at))}</div>${
-            st.note ? `<div class="note-line" title="${esc(st.note)}">${esc(st.note)}</div>` : ''}</td>`;
-        }
         return `<td class="nowrap">${btn}</td>`;
       }).join('');
-      return `<tr>
+      const stage = stageOf(x);
+      const outCell = stage !== 'none'
+        ? `<td class="nowrap t-out"><span class="badge s-${esc(stage)}">${esc(OUTCOME_LABEL[stage])}</span></td>`
+        : '<td class="t-out muted">—</td>';
+      const open = openRows.has(x.key);
+      const cols = 5 + actions.length;
+      return `<tr class="${['ghosted', 'rejected'].includes(stage) ? 'closed' : ''} ${open ? 'expanded' : ''}">
         <td class="t-title">${title}${sub.length ? `<div class="sub">${sub.join(' · ')}</div>` : ''}</td>
         <td>${hl(it.company || '', qc) || '<span class="muted">—</span>'}</td>
         <td class="nowrap">${esc(fmtDay(localDay(x.scannedAt))) || '<span class="muted">—</span>'}</td>
         ${cells}
-      </tr>`;
+        ${outCell}
+        <td class="t-menu"><button type="button" class="dots" data-key="${esc(x.key)}" aria-haspopup="menu" aria-expanded="${menuState.owner === `row:${x.key}`}" title="More" aria-label="More options">⋯</button></td>
+      </tr>${open ? `<tr class="detail-row"><td colspan="${cols}">${timelineHtml(x)}</td></tr>` : ''}`;
     }).join('')}</tbody>`;
 }
 

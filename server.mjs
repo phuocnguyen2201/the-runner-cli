@@ -12,7 +12,9 @@ import {
 import { editableFiles, fileGroups, fileInfo, readEditable, saveEditable, readVersion } from './lib/files.mjs';
 import {
   itemActions, publicActions, itemKey, cleanItem, fillTemplate, readStore, updateItemState, runCommandAction,
+  OUTCOMES, setItemOutcome, changeRevisions,
 } from './lib/items.mjs';
+import { readPresets, changePresets } from './lib/presets.mjs';
 
 const cfg = loadConfig();
 const host = resolveHost(cfg.host);
@@ -45,7 +47,8 @@ const server = createServer(async (req, res) => {
     if (req.method === 'GET' && path === '/api/config') {
       return json(res, 200, {
         project: basename(cfg.projectDir),
-        presets: cfg.presets,
+        presets: readPresets(cfg).map((p) => p.request),
+        promptFile: cfg.promptFile ? basename(cfg.promptFile) : null,
         mail: Boolean(cfg.mail?.to),
         timeout: cfg.timeout,
         groups: fileGroups(cfg),
@@ -76,15 +79,33 @@ const server = createServer(async (req, res) => {
     if (req.method === 'GET' && path === '/api/tracker') {
       return json(res, 200, { active: activeRunId(), items: trackedItems() });
     }
+    if (req.method === 'POST' && path === '/api/tracker/status') {
+      return await setOutcome(req, res);
+    }
+    if (req.method === 'POST' && path === '/api/tracker/revisions') {
+      return await changeRevision(req, res);
+    }
+    if (req.method === 'GET' && path === '/api/presets') {
+      return json(res, 200, { presets: readPresets(cfg), promptFile: cfg.promptFile ? basename(cfg.promptFile) : null });
+    }
+    const pr = path.match(/^\/api\/presets(?:\/(\d+))?$/);
+    if (pr && ['POST', 'PUT', 'DELETE'].includes(req.method)) {
+      const body = await readBody(req, 64 * 1024);
+      const index = pr[1] == null ? null : Number(pr[1]);
+      const op = req.method === 'POST' ? { type: 'insert', at: body.at, preset: body }
+        : { type: req.method === 'PUT' ? 'update' : 'delete', index, expect: body.expect, preset: body };
+      if ((op.type === 'insert') !== (index == null)) return json(res, 404, { error: 'not found' });
+      return json(res, 200, { presets: changePresets(cfg, op) });
+    }
     if (req.method === 'POST' && path === '/api/runs') {
-      return startRun(req, res);
+      return await startRun(req, res);
     }
     if (req.method === 'POST' && path === '/api/runs/paste') {
-      return startPasteRun(req, res);
+      return await startPasteRun(req, res);
     }
 
     const a = path.match(/^\/api\/runs\/(\d{8}-\d{6})\/items\/(\d+)\/actions\/([\w-]+)$/);
-    if (a && req.method === 'POST') return itemAction(req, res, a[1], Number(a[2]), a[3]);
+    if (a && req.method === 'POST') return await itemAction(req, res, a[1], Number(a[2]), a[3]);
 
     const m = path.match(/^\/api\/runs\/([^/]+)(\/cancel)?$/);
     if (m && RUN_ID_RE.test(m[1])) {
@@ -197,7 +218,10 @@ function jobState(runId) {
   const dir = runDir(cfg, runId);
   const status = checkStale(dir, readJson(join(dir, 'status.json'), {}));
   const meta = readJson(join(dir, 'meta.json'), null);
-  return { runId, state: status.state || 'unknown', badge: meta?.badge ?? null, summary: meta?.summary ?? null };
+  return {
+    runId, state: status.state || 'unknown', badge: meta?.badge ?? null, summary: meta?.summary ?? null,
+    startedAt: status.startedAt || status.createdAt || null, finishedAt: status.finishedAt || null,
+  };
 }
 
 // Items of a run with the state of each action.
@@ -267,7 +291,7 @@ function trackedItems() {
     }
     if (!tracked) continue;
     keys.add(key);
-    out.push(trackerEntry(key, src, states));
+    out.push(trackerEntry(key, src, states, saved._status, saved._revisions));
   }
 
   // Pasted evaluations whose item was never acted on.
@@ -284,13 +308,45 @@ function trackedItems() {
     if (!item.title) item.title = st.summary || 'Pasted text';
     keys.add(key);
     const states = Object.fromEntries(actions.map((a) => [a.id, a === pasteAction ? st : null]));
-    out.push(trackerEntry(key, { item, runId: raw ? id : null, index: raw ? 0 : null, at: status.startedAt || status.createdAt || null, pasteRunId: id }, states));
+    out.push(trackerEntry(key, { item, runId: raw ? id : null, index: raw ? 0 : null, at: status.startedAt || status.createdAt || null, pasteRunId: id }, states, store[key]?._status, store[key]?._revisions));
   }
   return out;
 }
 
-function trackerEntry(key, src, states) {
-  const parts = [src.item.description, ...Object.values(states).flatMap((s) => [s?.summary, s?.note])];
+// Mark a tracked item ghosted/rejected (or clear it). Only keys the tracker lists are accepted.
+async function setOutcome(req, res) {
+  const body = await readBody(req);
+  const key = String(body.key ?? '');
+  const status = body.status == null ? null : String(body.status);
+  if (status && !OUTCOMES.includes(status)) return json(res, 400, { error: `status must be one of: ${OUTCOMES.join(', ')}` });
+  if (!trackedItems().some((x) => x.key === key)) return json(res, 404, { error: 'item not found in tracker' });
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(body.date || '') ? body.date : new Date().toISOString().slice(0, 10);
+  const outcome = status ? { status, date, note: String(body.note ?? '').slice(0, 2000), at: new Date().toISOString() } : null;
+  json(res, 200, { outcome: setItemOutcome(cfg, key, outcome) });
+}
+
+// Add a "Revised" event ({key, date, note}) or remove one ({key, remove: index}).
+async function changeRevision(req, res) {
+  const body = await readBody(req);
+  const key = String(body.key ?? '');
+  if (!trackedItems().some((x) => x.key === key)) return json(res, 404, { error: 'item not found in tracker' });
+  const revisions = changeRevisions(cfg, key, (list) => {
+    if (body.remove != null) {
+      if (!Number.isInteger(body.remove) || !list[body.remove]) throw Object.assign(new Error('revision not found'), { status: 404 });
+      list.splice(body.remove, 1);
+      return list;
+    }
+    const date = /^\d{4}-\d{2}-\d{2}$/.test(body.date || '') ? body.date : new Date().toISOString().slice(0, 10);
+    if (list.length >= 50) throw Object.assign(new Error('too many revisions'), { status: 400 });
+    list.push({ date, note: String(body.note ?? '').slice(0, 2000), at: new Date().toISOString() });
+    return list.sort((a, b) => a.date.localeCompare(b.date) || a.at.localeCompare(b.at));
+  });
+  json(res, 200, { revisions });
+}
+
+function trackerEntry(key, src, states, outcome = null, revisions = null) {
+  const revs = (Array.isArray(revisions) ? revisions : []).map((r) => ({ date: r.date, note: r.note || '' }));
+  const parts = [src.item.description, outcome?.note, ...revs.map((r) => r.note), ...Object.values(states).flatMap((s) => [s?.summary, s?.note])];
   for (const s of Object.values(states)) {
     if (s?.runId && s.state === 'done') parts.push(readText(join(runDir(cfg, s.runId), 'result.md'))?.slice(0, TEXT_LIMIT));
   }
@@ -302,6 +358,8 @@ function trackerEntry(key, src, states) {
     index: src.index ?? null,
     scannedAt: src.at ?? null,
     states,
+    outcome: outcome?.status ? { status: outcome.status, date: outcome.date, note: outcome.note || '' } : null,
+    revisions: revs,
     text: parts.filter(Boolean).join('\n'),
   };
 }
