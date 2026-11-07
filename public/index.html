@@ -178,6 +178,13 @@
   button.expand .chev { display: inline-block; transition: transform .15s; }
   button.expand[aria-expanded="true"] .chev { transform: rotate(180deg); }
   button.dots { vertical-align: middle; }
+  .card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+  .card-head h2 { margin: 0; }
+  .pager { justify-content: center; gap: 12px; }
+  button.refresh { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+  button.refresh .ic { display: inline-block; font-size: 15px; line-height: 1; }
+  button.refresh.spin .ic { animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
   button.dots:hover, button.dots[aria-expanded="true"] { border-color: var(--border); color: var(--text); background: var(--surface-2); }
   .menu { position: fixed; z-index: 20; min-width: 170px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 4px; box-shadow: 0 8px 24px rgba(0,0,0,.18); }
   .menu button { display: block; width: 100%; text-align: left; background: none; border: 0; border-radius: 6px; padding: 7px 10px; font: inherit; font-size: 14px; color: var(--text); cursor: pointer; }
@@ -311,6 +318,7 @@
         <label>Status<select id="f-status"><option value="">All tracked</option></select></label>
         <label>Scanned<span class="range"><input type="date" id="f-scan-from" aria-label="Scanned from"><span>–</span><input type="date" id="f-scan-to" aria-label="Scanned to"></span></label>
         <label id="f-applied-wrap"><span id="f-applied-label">Applied</span><span class="range"><input type="date" id="f-applied-from" aria-label="Applied from"><span>–</span><input type="date" id="f-applied-to" aria-label="Applied to"></span></label>
+        <label>Show<select id="f-size"><option value="5">5 per page</option><option value="10" selected>10 per page</option></select></label>
         <label>Sort by<span class="range"><select id="f-sort"></select><button class="ghost" type="button" id="f-dir" title="Toggle direction" style="padding:6px 10px">↓</button></span></label>
       </div>
       <div class="row">
@@ -319,9 +327,17 @@
       </div>
     </div>
     <div class="card">
-      <h2 id="t-heading">Tracked</h2>
+      <div class="card-head">
+        <h2 id="t-heading">Tracked</h2>
+        <button type="button" class="ghost refresh" id="refresh" title="Reload the latest data"><span class="ic" aria-hidden="true">↻</span> Refresh</button>
+      </div>
       <div class="table-wrap"><table class="tracker" id="t-table"></table></div>
       <div class="empty" id="t-empty" hidden></div>
+      <div class="row pager" id="t-pager" hidden>
+        <button class="ghost" type="button" id="pg-prev">‹ Previous</button>
+        <span class="muted" id="pg-info" style="font-size:14px"></span>
+        <button class="ghost" type="button" id="pg-next">Next ›</button>
+      </div>
     </div>
   </section>
   <section id="rules-view" hidden>
@@ -843,7 +859,9 @@ async function openResultDialog(item, st) {
 // ── tracker view ───────────────────────────────────────────────────────────
 
 const TRACKER_KEY = 'tracker-filters';
-const FILTER_IDS = ['f-company', 'f-title', 'f-desc', 'f-status', 'f-scan-from', 'f-scan-to', 'f-applied-from', 'f-applied-to', 'f-sort'];
+const FILTER_IDS = ['f-company', 'f-title', 'f-desc', 'f-status', 'f-scan-from', 'f-scan-to', 'f-applied-from', 'f-applied-to', 'f-sort', 'f-size'];
+const PAGE_SIZES = ['5', '10'];
+let page = 1;
 let trackerCtx = { items: [] };
 let sortDir = 'desc';
 
@@ -882,6 +900,7 @@ function setupTracker() {
     const saved = JSON.parse(localStorage.getItem(TRACKER_KEY) || 'null');
     if (saved) {
       for (const id of FILTER_IDS) if (saved[id] != null) $(id).value = saved[id];
+      if (!PAGE_SIZES.includes($('f-size').value)) $('f-size').value = '10';
       if (!$('f-sort').value) $('f-sort').value = 'scanned';
       if (saved.dir === 'asc' || saved.dir === 'desc') sortDir = saved.dir;
     }
@@ -891,7 +910,7 @@ function setupTracker() {
   $('filters').addEventListener('input', onFilterChange);
   $('f-dir').addEventListener('click', () => { sortDir = sortDir === 'asc' ? 'desc' : 'asc'; onFilterChange(); });
   $('f-reset').addEventListener('click', () => {
-    for (const id of FILTER_IDS) if (id !== 'f-sort') $(id).value = '';
+    for (const id of FILTER_IDS) if (id !== 'f-sort' && id !== 'f-size') $(id).value = '';
     onFilterChange();
   });
   $('t-table').addEventListener('click', (e) => {
@@ -1104,7 +1123,12 @@ function timelineHtml(x) {
   return `<ol class="timeline">${out.join('')}</ol>`;
 }
 
+$('pg-prev').addEventListener('click', () => { page--; renderTracker(); });
+$('pg-next').addEventListener('click', () => { page++; renderTracker(); });
+
+// Any filter/sort/page-size change starts again at page 1.
 function onFilterChange() {
+  page = 1;
   $('f-dir').textContent = sortDir === 'asc' ? '↑' : '↓';
   try {
     const saved = Object.fromEntries(FILTER_IDS.map((id) => [id, $(id).value]));
@@ -1181,11 +1205,21 @@ function hl(text, ws) {
 
 function renderTracker() {
   const actions = appCfg.itemActions || [];
-  const list = filteredItems();
+  const all = filteredItems();
   const total = trackerCtx.items.length;
+  const size = Number($('f-size').value) || 10;
+  const pages = Math.max(1, Math.ceil(all.length / size));
+  page = Math.min(Math.max(1, page), pages);
+  const from = (page - 1) * size;
+  const list = all.slice(from, from + size);
   $('t-heading').textContent = `${$('t-heading').dataset.label || 'Tracker'} (${total})`;
-  $('t-count').textContent = list.length === total ? `${total} item${total === 1 ? '' : 's'}` : `Showing ${list.length} of ${total}`;
-  $('t-empty').hidden = list.length > 0;
+  $('t-count').textContent = !all.length ? `0 of ${total}`
+    : `Showing ${from + 1}–${from + list.length} of ${all.length}${all.length === total ? '' : ` (filtered from ${total})`}`;
+  $('t-pager').hidden = pages <= 1;
+  $('pg-info').textContent = `Page ${page} of ${pages}`;
+  $('pg-prev').disabled = page <= 1;
+  $('pg-next').disabled = page >= pages;
+  $('t-empty').hidden = all.length > 0;
   $('t-empty').textContent = total ? 'Nothing matches these filters.' : 'Nothing tracked yet. Items show up here once you apply to or evaluate them.';
   if (menuState.owner?.startsWith('row:') && !list.some((x) => `row:${x.key}` === menuState.owner)) closeMenu(); // a refresh keeps an open menu for a row still shown
   if (!list.length) { $('t-table').innerHTML = ''; return; }
@@ -1346,6 +1380,26 @@ window.addEventListener('beforeunload', (e) => {
 });
 
 // ── routing + polling ──────────────────────────────────────────────────────
+
+// Tracker: manual refresh of the tracker data.
+$('refresh').addEventListener('click', async () => {
+  const btn = $('refresh');
+  if (btn.disabled) return;
+  btn.disabled = true;
+  btn.classList.add('spin');
+  const started = Date.now();
+  try {
+    await refreshTracker();
+  } catch (err) {
+    alert(err.message);
+  } finally {
+    setTimeout(() => { // keep the spin visible briefly so the click is noticeable
+      btn.disabled = false;
+      btn.classList.remove('spin');
+      btn.title = `Updated ${new Date().toLocaleTimeString()}`;
+    }, Math.max(0, 400 - (Date.now() - started)));
+  }
+});
 
 let lastHash = location.hash;
 
