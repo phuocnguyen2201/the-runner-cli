@@ -15,6 +15,7 @@ import {
   OUTCOMES, setItemOutcome, changeRevisions,
 } from './lib/items.mjs';
 import { readPresets, changePresets } from './lib/presets.mjs';
+import { readApplications, readScanHistory, readReport, pairKey, APPLIED_STATES } from './lib/career.mjs';
 
 const cfg = loadConfig();
 const host = resolveHost(cfg.host);
@@ -78,6 +79,10 @@ const server = createServer(async (req, res) => {
     }
     if (req.method === 'GET' && path === '/api/tracker') {
       return json(res, 200, { active: activeRunId(), items: trackedItems() });
+    }
+    if (req.method === 'GET' && path === '/api/tracker/report') {
+      const markdown = readReport(cfg, url.searchParams.get('name'));
+      return markdown == null ? json(res, 404, { error: 'report not found' }) : json(res, 200, { markdown });
     }
     if (req.method === 'POST' && path === '/api/tracker/status') {
       return await setOutcome(req, res);
@@ -244,7 +249,8 @@ function runItems(dir) {
 }
 
 // Tracker: every item with a finished command action (e.g. Applied) or a linked job (e.g. Evaluated),
-// plus pasted-text evaluations, with the date the item was first seen in a run.
+// plus pasted-text evaluations, plus every row of the career-ops applications.md (read-only),
+// with the date the item was first seen in a run or in scan-history.tsv.
 const TEXT_LIMIT = 4000;
 
 function trackedItems() {
@@ -252,7 +258,8 @@ function trackedItems() {
   const actions = itemActions(cfg);
   const pasteAction = actions.find((a) => a.type === 'job'); // pasted evaluations show in this column
   const ids = readdirSync(cfg.runsDir).filter((name) => RUN_ID_RE.test(name)).sort(); // oldest first
-  const firstSeen = new Map(); // item key -> { item, runId, index, at, trigger }
+  const firstSeen = new Map(); // item key -> { item, runId, index, at, trigger } (every item in any run)
+  const seenByPair = new Map(); // company|title -> item key
   const pastes = [];
 
   for (const id of ids) {
@@ -264,8 +271,10 @@ function trackedItems() {
     items.forEach((raw, index) => {
       const item = cleanItem(raw);
       const key = itemKey(item);
-      if (store[key] && !firstSeen.has(key)) {
+      if (!firstSeen.has(key)) {
         firstSeen.set(key, { item, runId: id, index, at: status.startedAt || status.createdAt || null, trigger: status.trigger });
+        const pk = pairKey(item.company, item.title);
+        if (!seenByPair.has(pk)) seenByPair.set(pk, key);
       }
     });
   }
@@ -310,7 +319,62 @@ function trackedItems() {
     const states = Object.fromEntries(actions.map((a) => [a.id, a === pasteAction ? st : null]));
     out.push(trackerEntry(key, { item, runId: raw ? id : null, index: raw ? 0 : null, at: status.startedAt || status.createdAt || null, pasteRunId: id }, states, store[key]?._status, store[key]?._revisions));
   }
+
+  mergeApplications(out, keys, store, actions, firstSeen, seenByPair);
   return out;
+}
+
+// Rows of applications.md: merged into a matching entry (same URL, or same company + title),
+// otherwise added as their own entry. Runner items found in a scan keep their run link and buttons.
+function mergeApplications(out, keys, store, actions, firstSeen, seenByPair) {
+  const apps = readApplications(cfg);
+  if (!apps.length) return;
+  const scans = readScanHistory(cfg);
+  const cmd = actions.find((a) => a.type === 'command');
+  const job = actions.find((a) => a.type === 'job');
+  const byKey = new Map(out.map((e) => [e.key, e]));
+  const byPair = new Map();
+  for (const e of out) {
+    const pk = pairKey(e.item.company, e.item.title);
+    if (!byPair.has(pk)) byPair.set(pk, e);
+  }
+
+  for (const r of apps) {
+    const pk = pairKey(r.company, r.role);
+    const urlKey = r.url ? itemKey({ url: r.url }) : null;
+    let entry = (urlKey && byKey.get(urlKey)) || byPair.get(pk);
+    if (entry?.career) entry = null; // two rows for the same job: keep both
+    if (!entry) {
+      let key = urlKey && firstSeen.has(urlKey) ? urlKey : seenByPair.get(pk) || urlKey || `app:${pk}`;
+      if (keys.has(key)) key = `app:${r.num}:${pk}`;
+      const seen = firstSeen.get(key);
+      const item = seen?.item || cleanItem({ title: r.role, company: r.company, url: r.url });
+      const states = Object.fromEntries(actions.map((a) => [a.id, null]));
+      entry = trackerEntry(key, { item, runId: seen?.runId ?? null, index: seen?.index ?? null, at: seen?.at ?? null }, states, store[key]?._status, store[key]?._revisions);
+      out.push(entry);
+      keys.add(key);
+      byKey.set(key, entry);
+      byPair.set(pk, entry);
+    }
+
+    entry.career = { num: r.num, status: r.status, statusLabel: r.statusLabel, date: r.date, score: r.score, report: r.report, notes: r.notes, rejectedDate: r.rejectedDate };
+    if (cmd && !entry.states[cmd.id] && APPLIED_STATES.has(r.status)) {
+      entry.states[cmd.id] = { state: 'done', date: r.appliedDate, note: `From applications.md #${r.num}`, source: 'career' };
+    }
+    if (job && !entry.states[job.id] && (r.score || r.report)) {
+      entry.states[job.id] = { state: 'done', badge: r.score, summary: null, day: r.evaluatedDate, report: r.report, source: 'career' };
+    }
+    const scan = (r.url && scans.byUrl.get(r.url)) || scans.byPair.get(pk);
+    if (scan) {
+      const at = `${scan.firstSeen}T12:00:00Z`; // a day, not a time: noon UTC stays on that day in any zone
+      if (!entry.scannedAt || Date.parse(at) < Date.parse(entry.scannedAt)) {
+        entry.scannedAt = at;
+        entry.scanPortal = scan.portal;
+      }
+    }
+    const report = r.report ? readReport(cfg, r.report)?.slice(0, TEXT_LIMIT) : '';
+    entry.text = [entry.text, r.notes, report].filter(Boolean).join('\n');
+  }
 }
 
 // Mark a tracked item ghosted/rejected (or clear it). Only keys the tracker lists are accepted.

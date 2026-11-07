@@ -192,15 +192,19 @@
   .menu button.on::after { content: ' ✓'; color: var(--muted); }
   .menu hr { border: 0; border-top: 1px solid var(--border); margin: 4px 0; }
   .s-rejected { color: var(--err); } .s-ghosted { color: var(--muted); } .s-revised { color: var(--run); }
+  .s-discarded, .s-skip { color: var(--muted); } .s-responded, .s-interview { color: var(--run); } .s-offer { color: var(--ok); }
+  .career-note { font-size: 13px; color: var(--muted); padding: 10px 16px 0; overflow-wrap: anywhere; }
+  .career-note strong { color: var(--text); }
   table.tracker tr.expanded td { border-bottom-color: transparent; }
   table.tracker tr.detail-row > td { padding: 0 8px 14px; }
-  ol.timeline { list-style: none; margin: 0; padding: 12px 16px; background: var(--surface-2); border-radius: 10px; display: grid; gap: 0; }
+  .timeline-wrap { background: var(--surface-2); border-radius: 10px; }
+  ol.timeline { list-style: none; margin: 0; padding: 12px 16px; display: grid; gap: 0; }
   ol.timeline > li { position: relative; display: grid; grid-template-columns: 18px 130px 1fr; gap: 2px 10px; padding: 6px 0; }
   ol.timeline > li::before { content: ''; position: absolute; left: 5px; top: 20px; bottom: -8px; border-left: 2px solid var(--border); }
   ol.timeline > li:last-child::before { display: none; }
   ol.timeline .dot { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--border); background: var(--surface); margin-top: 4px; position: relative; }
   ol.timeline li.on .dot { border-color: currentColor; background: currentColor; }
-  ol.timeline li.on { color: var(--ok); } ol.timeline li.on.s-rejected { color: var(--err); } ol.timeline li.on.s-ghosted { color: var(--muted); } ol.timeline li.on.s-revised { color: var(--run); }
+  ol.timeline li.on { color: var(--ok); } ol.timeline li.on.s-rejected { color: var(--err); } ol.timeline li.on.s-ghosted { color: var(--muted); } ol.timeline li.on.s-revised { color: var(--run); } ol.timeline li.on.s-discarded, ol.timeline li.on.s-skip { color: var(--muted); } ol.timeline li.on.s-responded, ol.timeline li.on.s-interview { color: var(--run); }
   ol.timeline .step { font-weight: 600; color: var(--text); white-space: nowrap; }
   ol.timeline li:not(.on) .step { color: var(--muted); font-weight: 500; }
   ol.timeline .what { color: var(--text); font-size: 14px; min-width: 0; overflow-wrap: anywhere; }
@@ -843,10 +847,18 @@ async function openResultDialog(item, st) {
   $('big-title').textContent = [item.title, item.company].filter(Boolean).join(' · ');
   $('big-meta').innerHTML = `${st.badge ? `<span class="badge s-done">${esc(st.badge)}</span>` : ''}
     ${st.summary ? `<span class="muted" style="font-size:14px">${esc(st.summary)}</span>` : ''}
-    <a class="back" href="#/run/${esc(st.runId)}" onclick="this.closest('dialog').close()">Open run →</a>`;
+    ${st.runId ? `<a class="back" href="#/run/${esc(st.runId)}" onclick="this.closest('dialog').close()">Open run →</a>`
+      : st.report ? `<span class="muted" style="font-size:13px">reports/${esc(st.report)}</span>` : ''}`;
   $('big-body').innerHTML = '<p class="muted">Loading…</p>';
   dlg.showModal();
   try {
+    if (!st.runId) {
+      // Evaluated in career-ops: show its report, if the row links one.
+      const md = st.report ? (await api(`/api/tracker/report?name=${encodeURIComponent(st.report)}`)).markdown : null;
+      $('big-body').innerHTML = md ? renderMarkdown(md) : '<p class="muted">No report is linked in applications.md.</p>';
+      $('big-body').scrollTop = 0;
+      return;
+    }
     const r = await api(`/api/runs/${st.runId}`);
     $('big-body').innerHTML = r.result ? renderMarkdown(r.result) : '<p class="muted">No result was written.</p>';
     $('big-body').scrollTop = 0;
@@ -884,7 +896,8 @@ function setupTracker() {
   $('t-heading').dataset.label = appCfg.trackerLabel || 'Tracker';
   $('f-status').innerHTML = '<option value="">All tracked</option>' + actions.map((a) =>
     `<option value="has:${esc(a.id)}">${esc(a.doneLabel)}</option><option value="not:${esc(a.id)}">Not ${esc(a.label.toLowerCase())}</option>`).join('') +
-    '<option value="out:none">Still open</option><option value="out:ghosted">Ghosted</option><option value="out:rejected">Rejected</option><option value="out:revised">Revised</option>';
+    '<option value="out:none">Still open</option><option value="out:ghosted">Ghosted</option><option value="out:rejected">Rejected</option><option value="out:revised">Revised</option>' +
+    ['responded', 'interview', 'offer', 'discarded', 'skip'].map((k) => `<option value="out:${k}">${OUTCOME_LABEL[k]}</option>`).join('');
   const cmd = commandAction();
   $('f-applied-wrap').hidden = !cmd;
   if (cmd) $('f-applied-label').textContent = `${cmd.label} date`;
@@ -993,18 +1006,34 @@ function closeMenu() {
 }
 
 // ── tracker rows: details, ghosted / rejected, revise ──
-const OUTCOME_LABEL = { ghosted: 'Ghosted', rejected: 'Rejected', revised: 'Revised' };
+const OUTCOME_LABEL = {
+  ghosted: 'Ghosted', rejected: 'Rejected', revised: 'Revised',
+  responded: 'Responded', interview: 'Interview', offer: 'Offer', discarded: 'Discarded', skip: 'Skip',
+};
+const CLOSED = ['ghosted', 'rejected', 'discarded', 'skip'];
+const CAREER_OUTCOMES = ['rejected', 'responded', 'interview', 'offer', 'discarded', 'skip'];
+
+// Outcome set in this UI, else the status from applications.md (rejected, interview, …).
+function outcomeOf(x) {
+  if (x.outcome) return x.outcome;
+  const c = x.career;
+  if (c && CAREER_OUTCOMES.includes(c.status)) {
+    return { status: c.status, date: c.status === 'rejected' ? c.rejectedDate : null, note: '', career: true };
+  }
+  return null;
+}
 const openRows = new Set(); // keys whose details are expanded (kept across refreshes)
 
 // Current stage: a revision dated on/after the ghosted/rejected date re-opens the item.
 function stageOf(x) {
   const last = x.revisions?.at(-1);
-  if (last && (!x.outcome || last.date >= x.outcome.date)) return 'revised';
-  return x.outcome?.status || 'none';
+  const o = outcomeOf(x);
+  if (last && (!o || !o.date || last.date >= o.date)) return 'revised';
+  return o?.status || 'none';
 }
 const stageDate = (x) => {
   const st = stageOf(x);
-  return st === 'revised' ? x.revisions.at(-1).date : st === 'none' ? null : x.outcome.date;
+  return st === 'revised' ? x.revisions.at(-1).date : st === 'none' ? null : outcomeOf(x)?.date || null;
 };
 
 function openRowMenu(btn) {
@@ -1089,9 +1118,13 @@ function timelineHtml(x) {
   const notYet = '<span class="muted">Not yet</span>';
   const out = [];
 
+  const scanWhen = x.scanPortal ? fmtDay(localDay(x.scannedAt)) : fmtDate(x.scannedAt);
+  const scanFrom = x.runId ? ` · <a href="#/run/${esc(x.runId)}">open run</a>`
+    : x.scanPortal ? ` <span class="muted">· scan-history (${esc(x.scanPortal)})</span>`
+    : x.career ? '' : ' <span class="muted">· pasted text</span>';
   out.push(step('Scanned', Boolean(x.scannedAt), '', x.scannedAt
-    ? `${when(fmtDate(x.scannedAt))}${x.runId ? ` · <a href="#/run/${esc(x.runId)}">open run</a>` : ' <span class="muted">· pasted text</span>'}`
-    : notYet));
+    ? `${when(scanWhen)}${scanFrom}`
+    : x.career ? '<span class="muted">Not in scan history (added manually)</span>' : notYet));
 
   for (const a of actions.filter((a) => a.type === 'command')) {
     const st = x.states?.[a.id];
@@ -1104,15 +1137,15 @@ function timelineHtml(x) {
     let what = notYet;
     if (st && ACTIVE.includes(st.state)) what = `<span class="muted">${esc(st.state === 'queued' ? 'Queued…' : a.runningLabel)}</span>`;
     else if (st?.state === 'done') {
-      what = `${when(fmtDate(st.finishedAt || st.startedAt))}${st.badge ? ` <span class="badge s-done">${esc(st.badge)}</span>` : ''}${line(st.summary)}
-        <button type="button" class="link" data-result="${esc(a.id)}" data-key="${esc(x.key)}">Open result</button>`;
+      what = `${when(st.day ? fmtDay(st.day) : fmtDate(st.finishedAt || st.startedAt))}${st.badge ? ` <span class="badge s-done">${esc(st.badge)}</span>` : ''}${line(st.summary)}
+        ${st.runId || st.report ? `<button type="button" class="link" data-result="${esc(a.id)}" data-key="${esc(x.key)}">${st.runId ? 'Open result' : 'Open report'}</button>` : ''}`;
     } else if (st) what = `<span class="badge s-failed">${esc(st.state)}</span>`;
     out.push(step(a.doneLabel, st?.state === 'done', '', what));
   }
 
-  const o = x.outcome;
+  const o = outcomeOf(x);
   out.push(step('Ghosted / Rejected', Boolean(o), o ? `s-${o.status}` : '', o
-    ? `<span class="badge s-${esc(o.status)}">${esc(OUTCOME_LABEL[o.status])}</span> ${when(fmtDay(o.date))}${line(o.note)}`
+    ? `<span class="badge s-${esc(o.status)}">${esc(OUTCOME_LABEL[o.status] || o.status)}</span> ${when(fmtDay(o.date))}${line(o.career ? 'From applications.md' : o.note)}`
     : '<span class="muted">—</span>'));
 
   const revs = x.revisions || [];
@@ -1120,7 +1153,9 @@ function timelineHtml(x) {
     ? revs.map((r, i) => `<div>${when(fmtDay(r.date))}<button type="button" class="link rm" data-rm-rev="${i}" data-key="${esc(x.key)}" title="Remove" aria-label="Remove revision">×</button>${line(r.note)}</div>`).join('')
     : '<span class="muted">— use ⋯ → Revise when the company comes back</span>'));
 
-  return `<ol class="timeline">${out.join('')}</ol>`;
+  const c = x.career;
+  const note = c ? `<div class="career-note"><strong>applications.md #${esc(c.num)}</strong> · ${esc(c.statusLabel || c.status)}${c.date ? ` · ${esc(fmtDay(c.date))}` : ''}${c.notes ? `<br>${esc(c.notes)}` : ''}</div>` : '';
+  return `<div class="timeline-wrap">${note}<ol class="timeline">${out.join('')}</ol></div>`;
 }
 
 $('pg-prev').addEventListener('click', () => { page--; renderTracker(); });
@@ -1220,7 +1255,7 @@ function renderTracker() {
   $('pg-prev').disabled = page <= 1;
   $('pg-next').disabled = page >= pages;
   $('t-empty').hidden = all.length > 0;
-  $('t-empty').textContent = total ? 'Nothing matches these filters.' : 'Nothing tracked yet. Items show up here once you apply to or evaluate them.';
+  $('t-empty').textContent = total ? 'Nothing matches these filters.' : 'Nothing tracked yet. Items show up here once you apply to or evaluate them, or when data/applications.md has rows.';
   if (menuState.owner?.startsWith('row:') && !list.some((x) => `row:${x.key}` === menuState.owner)) closeMenu(); // a refresh keeps an open menu for a row still shown
   if (!list.length) { $('t-table').innerHTML = ''; return; }
 
@@ -1238,7 +1273,8 @@ function renderTracker() {
       const title = it.url
         ? `<a href="${esc(it.url)}" target="_blank" rel="noopener noreferrer">${hl(it.title || it.url, qt)}</a>`
         : `<strong>${hl(it.title || '(untitled)', qt)}</strong>`;
-      const sub = [it.location ? esc(it.location) : '', x.runId ? `<a class="back" href="#/run/${esc(x.runId)}" style="font-size:12px">found in run</a>` : ''].filter(Boolean);
+      const sub = [it.location ? esc(it.location) : '', x.runId ? `<a class="back" href="#/run/${esc(x.runId)}" style="font-size:12px">found in run</a>` : '',
+        x.career ? `applications.md #${esc(x.career.num)}` : ''].filter(Boolean);
       const cells = actions.map((a) => {
         const st = x.states?.[a.id];
         if (!st && x.runId == null) return '<td class="muted">—</td>';
@@ -1251,7 +1287,7 @@ function renderTracker() {
         : '<td class="t-out muted">—</td>';
       const open = openRows.has(x.key);
       const cols = 5 + actions.length;
-      return `<tr class="${['ghosted', 'rejected'].includes(stage) ? 'closed' : ''} ${open ? 'expanded' : ''}">
+      return `<tr class="${CLOSED.includes(stage) ? 'closed' : ''} ${open ? 'expanded' : ''}">
         <td class="t-title">${title}${sub.length ? `<div class="sub">${sub.join(' · ')}</div>` : ''}</td>
         <td>${hl(it.company || '', qc) || '<span class="muted">—</span>'}</td>
         <td class="nowrap">${esc(fmtDay(localDay(x.scannedAt))) || '<span class="muted">—</span>'}</td>

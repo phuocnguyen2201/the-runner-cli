@@ -110,6 +110,7 @@ printf "Subject: test\n\nhi" | msmtp you@gmail.com
 | `items.label` | Heading for the per-item list on a run page (e.g. `"Jobs found"`). |
 | `itemActions` | Buttons shown on each item. See [Item actions](#item-actions). |
 | `tracker.label` | Name of the tab that lists applied/evaluated items. Default `"Tracker"`. See [Tracker](#tracker). |
+| `tracker.applicationsFile`, `tracker.scanHistoryFile`, `tracker.reportsDir` | career-ops files the Tracker reads (relative to `projectDir`). Defaults: `data/applications.md`, `data/scan-history.tsv`, `reports`. `null` turns one off. |
 | `pasteAction` | Optional second button on the New job card for long pasted text, e.g. a job description. See [Pasted text](#pasted-text). |
 
 Relative paths are resolved from the repo folder. Set `RUNNER_CONFIG=/path/to/config.json` to use a different config file.
@@ -142,6 +143,12 @@ When Claude lists `items` in `meta.json`, the run page shows them with one butto
 ## Tracker
 
 The **Tracker** tab lists every item you have acted on across all runs: items where a `command` action succeeded (e.g. Applied), items with a linked `job` (e.g. Evaluated), and evaluations of pasted text.
+
+It also reads a career-ops-style tracker in `projectDir` (read-only; the runner never writes these files):
+
+- **`data/applications.md`**: every table row becomes a Tracker row, merged with the matching runner item when the URL (from the Notes, e.g. `Source: …`) or company + role match. Status `Applied`/`Responded`/`Interview`/`Offer`/`Rejected` marks it applied (date from "Applied YYYY-MM-DD" in the notes, else the Date column); a score or report marks it evaluated, and its button opens the linked report. `Rejected`, `Discarded`, `SKIP`, `Responded`, `Interview` and `Offer` show in the Outcome column. Ghosted/Rejected set in the UI take precedence.
+- **`data/scan-history.tsv`**: `first_seen` gives the Scanned date (matched by URL, else company + title).
+- Rows are re-read on every load, so a row added by hand appears after **Refresh**.
 
 - Columns: title, company, the date the item was first scanned, and one column per item action (with the applied date and note, or the evaluation badge).
 - Filters: company, job title, description (matches item fields, notes, and the first part of the evaluation result or pasted text), status (has/hasn't each action), scanned date range, and date range of the first `command` action.
