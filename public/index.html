@@ -172,6 +172,12 @@
   table.tracker td .act { font-size: 12px; padding: 4px 10px; }
   table.tracker .note-line { font-size: 12px; color: var(--muted); max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   button.dots { background: none; border: 1px solid transparent; color: var(--muted); border-radius: 8px; width: 32px; height: 30px; font-size: 18px; line-height: 1; cursor: pointer; }
+  table.tracker td.t-menu { white-space: nowrap; text-align: right; }
+  button.expand { background: none; border: 1px solid var(--border); color: var(--text); border-radius: 8px; padding: 4px 10px; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; vertical-align: middle; margin-right: 2px; }
+  button.expand:hover, button.expand[aria-expanded="true"] { border-color: var(--accent); }
+  button.expand .chev { display: inline-block; transition: transform .15s; }
+  button.expand[aria-expanded="true"] .chev { transform: rotate(180deg); }
+  button.dots { vertical-align: middle; }
   button.dots:hover, button.dots[aria-expanded="true"] { border-color: var(--border); color: var(--text); background: var(--surface-2); }
   .menu { position: fixed; z-index: 20; min-width: 170px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 4px; box-shadow: 0 8px 24px rgba(0,0,0,.18); }
   .menu button { display: block; width: 100%; text-align: left; background: none; border: 0; border-radius: 6px; padding: 7px 10px; font: inherit; font-size: 14px; color: var(--text); cursor: pointer; }
@@ -896,6 +902,12 @@ function setupTracker() {
       else { $('f-sort').value = key; sortDir = ['company', 'title'].includes(key) ? 'asc' : 'desc'; }
       return onFilterChange();
     }
+    const exp = e.target.closest('button.expand');
+    if (exp) {
+      const key = exp.dataset.key;
+      openRows.has(key) ? openRows.delete(key) : openRows.add(key);
+      return renderTracker();
+    }
     const dots = e.target.closest('button.dots');
     if (dots) return openRowMenu(dots);
     const btn = e.target.closest('button.act');
@@ -980,16 +992,13 @@ function openRowMenu(btn) {
   const entry = trackerCtx.items.find((x) => x.key === btn.dataset.key);
   if (!entry) return;
   const items = [
-    { cmd: 'details', label: openRows.has(entry.key) ? 'Hide details' : 'Details' },
-    'sep',
     { cmd: 'ghosted', label: 'Ghosted', on: entry.outcome?.status === 'ghosted' },
     { cmd: 'rejected', label: 'Rejected', on: entry.outcome?.status === 'rejected' },
     { cmd: 'revise', label: 'Revise…' },
   ];
   if (entry.outcome) items.push('sep', { cmd: 'clear', label: 'Clear ghosted/rejected' });
   openMenu(btn, `row:${entry.key}`, items, (cmd) => {
-    if (cmd === 'details') { openRows.has(entry.key) ? openRows.delete(entry.key) : openRows.add(entry.key); renderTracker(); }
-    else if (cmd === 'revise') openReviseDialog(entry);
+    if (cmd === 'revise') openReviseDialog(entry);
     else if (cmd === 'clear') { if (confirm(`Clear the ${entry.outcome.status} status of “${entry.item.title || ''}”?`)) saveOutcome(entry, null); }
     else openOutcomeDialog(entry, cmd);
   });
@@ -1214,7 +1223,7 @@ function renderTracker() {
         <td class="nowrap">${esc(fmtDay(localDay(x.scannedAt))) || '<span class="muted">—</span>'}</td>
         ${cells}
         ${outCell}
-        <td class="t-menu"><button type="button" class="dots" data-key="${esc(x.key)}" aria-haspopup="menu" aria-expanded="${menuState.owner === `row:${x.key}`}" title="More" aria-label="More options">⋯</button></td>
+        <td class="t-menu"><button type="button" class="expand" data-key="${esc(x.key)}" aria-expanded="${open}" title="${open ? 'Hide details' : 'Show details'}">Details <span class="chev">▾</span></button><button type="button" class="dots" data-key="${esc(x.key)}" aria-haspopup="menu" aria-expanded="${menuState.owner === `row:${x.key}`}" title="More" aria-label="More options">⋯</button></td>
       </tr>${open ? `<tr class="detail-row"><td colspan="${cols}">${timelineHtml(x)}</td></tr>` : ''}`;
     }).join('')}</tbody>`;
 }

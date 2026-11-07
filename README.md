@@ -147,8 +147,8 @@ The **Tracker** tab lists every item you have acted on across all runs: items wh
 - Filters: company, job title, description (matches item fields, notes, and the first part of the evaluation result or pasted text), status (has/hasn't each action), scanned date range, and date range of the first `command` action.
 - Sort by any column (click its header, or use *Sort by*). Empty values always sort last. Filters and sort are remembered in the browser.
 - Action buttons work here too, so you can mark an evaluated job as applied without going back to its run.
+- The **Details** button on each row opens it as an accordion with the item's history and dates: Scanned → Applied → Evaluated → Ghosted/Rejected → Revised.
 - The **⋯** button on each row has:
-  - **Details**: opens the row as an accordion with the item's history and dates: Scanned → Applied → Evaluated → Ghosted/Rejected → Revised.
   - **Ghosted** / **Rejected**: records the date and an optional note (pick it again to change the date). *Clear ghosted/rejected* removes it.
   - **Revise…**: the company came back (e.g. they couldn't find the right candidate). Adds a dated event; there can be several, and each can be removed in Details.
 - The Outcome column shows the current stage. A revision dated on or after the ghosted/rejected date re-opens the item (shown as *Revised*); ghosted/rejected items are dimmed. The Status filter and *Outcome date* sort use this stage.
