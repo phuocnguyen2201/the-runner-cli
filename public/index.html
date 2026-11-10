@@ -236,7 +236,11 @@
   ul.preset-items .use small { color: var(--muted); font-size: 12px; margin-top: 2px; }
   ul.preset-items .ghost.on { border-color: var(--accent); color: var(--accent); }
   #presets { flex-wrap: wrap; }
-  .chip.pinned { max-width: min(260px, 100%); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pin-chip { display: inline-flex; align-items: stretch; max-width: 100%; border: 1px solid var(--border); background: var(--surface-2); border-radius: 999px; overflow: hidden; }
+  .pin-chip:hover { border-color: var(--accent); }
+  .pin-chip .chip.pinned { border: 0; border-radius: 0; background: none; padding-right: 8px; min-width: 0; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pin-chip .pin-edit { flex: none; background: none; border: 0; border-left: 1px solid var(--border); color: var(--muted); padding: 0 10px; font: inherit; font-size: 13px; cursor: pointer; }
+  .pin-chip .pin-edit:hover { color: var(--text); background: var(--surface); }
   ul.preset-items .ghost { font-size: 12px; padding: 4px 10px; }
   ul.preset-items .empty { border: 0; color: var(--muted); padding: 6px 0; }
   #preset-new textarea { width: 100%; box-sizing: border-box; }
@@ -730,7 +734,7 @@ function renderPresets() {
   // Pinned presets show as chips on the New job card, so they're one click away.
   $('presets').innerHTML = `<button type="button" class="chip" id="presets-open" aria-haspopup="dialog">☰ Presets (${presetList.length})</button>`
     + presetList.map((p, i) => (p.pinned
-      ? `<button type="button" class="chip pinned" data-i="${i}" title="${esc(p.rule ? `${p.request}\n\nRule: ${p.rule.slice(0, 300)}` : p.request)}">${esc(p.request)}</button>`
+      ? `<span class="pin-chip"><button type="button" class="chip pinned" data-i="${i}" title="${esc(p.rule ? `${p.request}\n\nRule: ${p.rule.slice(0, 300)}` : p.request)}">${esc(p.request)}</button><button type="button" class="pin-edit" data-edit="${i}" title="Edit preset" aria-label="Edit preset ${esc(p.request)}">✎</button></span>`
       : '')).join('');
   const pages = Math.max(1, Math.ceil(presetList.length / PRESETS_PER_PAGE));
   presetPage = Math.min(Math.max(presetPage, 0), pages - 1); // stays valid after a delete
@@ -756,6 +760,8 @@ function usePreset(request) {
 }
 
 $('presets').addEventListener('click', (e) => {
+  const edit = e.target.closest('.pin-edit');
+  if (edit) return openPresetDialog(Number(edit.dataset.edit));
   const pinned = e.target.closest('.chip.pinned');
   if (pinned) {
     $('request').value = presetList[Number(pinned.dataset.i)]?.request ?? '';
