@@ -229,8 +229,14 @@
   ul.preset-items { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
   ul.preset-items li { display: flex; align-items: center; gap: 6px; border: 1px solid var(--border); border-radius: 10px; padding: 4px; }
   ul.preset-items li:hover { border-color: var(--accent); }
-  ul.preset-items .use { flex: 1; min-width: 0; text-align: left; background: none; border: 0; padding: 6px 8px; font: inherit; color: var(--text); cursor: pointer; }
-  ul.preset-items .use small { display: block; color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  ul.preset-items li > * { flex: none; }
+  ul.preset-items .use { flex: 1 1 auto; min-width: 0; overflow: hidden; text-align: left; background: none; border: 0; padding: 6px 8px; font: inherit; color: var(--text); cursor: pointer; }
+  /* long requests and rules wrap and stop after 2 lines instead of spilling over the buttons */
+  ul.preset-items .use .req, ul.preset-items .use small { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; white-space: normal; }
+  ul.preset-items .use small { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  ul.preset-items .ghost.on { border-color: var(--accent); color: var(--accent); }
+  #presets { flex-wrap: wrap; }
+  .chip.pinned { max-width: min(260px, 100%); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   ul.preset-items .ghost { font-size: 12px; padding: 4px 10px; }
   ul.preset-items .empty { border: 0; color: var(--muted); padding: 6px 0; }
   #preset-new textarea { width: 100%; box-sizing: border-box; }
@@ -721,7 +727,11 @@ const PRESETS_PER_PAGE = 5;
 let presetPage = 0;
 
 function renderPresets() {
-  $('presets').innerHTML = `<button type="button" class="chip" id="presets-open" aria-haspopup="dialog">☰ Presets (${presetList.length})</button>`;
+  // Pinned presets show as chips on the New job card, so they're one click away.
+  $('presets').innerHTML = `<button type="button" class="chip" id="presets-open" aria-haspopup="dialog">☰ Presets (${presetList.length})</button>`
+    + presetList.map((p, i) => (p.pinned
+      ? `<button type="button" class="chip pinned" data-i="${i}" title="${esc(p.rule ? `${p.request}\n\nRule: ${p.rule.slice(0, 300)}` : p.request)}">${esc(p.request)}</button>`
+      : '')).join('');
   const pages = Math.max(1, Math.ceil(presetList.length / PRESETS_PER_PAGE));
   presetPage = Math.min(Math.max(presetPage, 0), pages - 1); // stays valid after a delete
   const start = presetPage * PRESETS_PER_PAGE;
@@ -731,7 +741,8 @@ function renderPresets() {
   $('pp-info').textContent = `${presetPage + 1} / ${pages}`;
   $('preset-items').innerHTML = presetList.length
     ? presetList.slice(start, start + PRESETS_PER_PAGE).map((p, j) => [p, start + j]).map(([p, i]) => `<li>
-        <button type="button" class="use" data-i="${i}" title="Use this preset">${esc(p.request)}${p.rule ? `<small>Rule: ${esc(p.rule)}</small>` : ''}</button>
+        <button type="button" class="use" data-i="${i}" title="Use this preset"><span class="req">${esc(p.request)}</span>${p.rule ? `<small>Rule: ${esc(p.rule)}</small>` : ''}</button>
+        <button type="button" class="ghost${p.pinned ? ' on' : ''}" data-pin="${i}" aria-pressed="${p.pinned}" title="${p.pinned ? 'Remove from the New job card' : 'Show on the New job card'}">${p.pinned ? 'Unpin' : 'Pin'}</button>
         <button type="button" class="ghost" data-edit="${i}">Edit</button>
         <button type="button" class="ghost" data-del="${i}" aria-label="Delete ${esc(p.request)}">Delete</button>
       </li>`).join('')
@@ -745,6 +756,12 @@ function usePreset(request) {
 }
 
 $('presets').addEventListener('click', (e) => {
+  const pinned = e.target.closest('.chip.pinned');
+  if (pinned) {
+    $('request').value = presetList[Number(pinned.dataset.i)]?.request ?? '';
+    $('request').focus();
+    return;
+  }
   if (e.target.id !== 'presets-open') return;
   $('preset-new').reset();
   $('pn-error').textContent = '';
@@ -761,11 +778,25 @@ $('pp-next').addEventListener('click', () => { presetPage++; renderPresets(); })
 $('preset-items').addEventListener('click', (e) => {
   const btn = e.target.closest('button');
   if (!btn) return;
+  if (btn.dataset.pin != null) return togglePin(Number(btn.dataset.pin), btn);
   if (btn.dataset.edit != null) return openPresetDialog(Number(btn.dataset.edit));
   if (btn.dataset.del != null) return deletePreset(Number(btn.dataset.del));
   const p = presetList[Number(btn.dataset.i)];
   if (p) usePreset(p.request);
 });
+
+async function togglePin(i, btn) {
+  const p = presetList[i];
+  btn.disabled = true;
+  try {
+    const { presets } = await api(`/api/presets/${i}`, { method: 'PUT', body: JSON.stringify({ ...p, pinned: !p.pinned, expect: p.request }) });
+    presetList = presets;
+  } catch (err) {
+    alert(err.message);
+    await loadPresets();
+  }
+  renderPresets();
+}
 
 $('preset-new').addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -809,7 +840,8 @@ $('preset-form').addEventListener('submit', async (e) => {
   if (e.submitter?.value !== 'save') return;
   e.preventDefault();
   const dlg = $('preset-dialog');
-  const body = { request: $('preset-request').value.trim(), rule: $('preset-rule').value.trim() };
+  const index = dlg.dataset.index === '' ? null : Number(dlg.dataset.index);
+  const body = { request: $('preset-request').value.trim(), rule: $('preset-rule').value.trim(), pinned: Boolean(presetList[index]?.pinned) };
   if (!body.request) { $('preset-error').textContent = 'Preset text is required.'; return; }
   $('preset-save').disabled = true;
   try {
