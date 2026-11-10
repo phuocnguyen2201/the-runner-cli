@@ -734,7 +734,7 @@ function renderPresets() {
   // Pinned presets show as chips on the New job card, so they're one click away.
   $('presets').innerHTML = `<button type="button" class="chip" id="presets-open" aria-haspopup="dialog">☰ Presets (${presetList.length})</button>`
     + presetList.map((p, i) => (p.pinned
-      ? `<span class="pin-chip"><button type="button" class="chip pinned" data-i="${i}" title="${esc(p.rule ? `${p.request}\n\nRule: ${p.rule.slice(0, 300)}` : p.request)}">${esc(p.request)}</button><button type="button" class="pin-edit" data-edit="${i}" title="Edit preset" aria-label="Edit preset ${esc(p.request)}">✎</button></span>`
+      ? `<span class="pin-chip"><button type="button" class="chip pinned" data-i="${i}" title="${esc(p.rule ? `${p.request}\n\nRule: ${p.rule.slice(0, 300)}` : p.request)}">${esc(p.request)}</button><button type="button" class="pin-edit" data-edit="${i}" title="Edit preset" aria-label="Edit preset ${esc(p.request)}">✎</button><button type="button" class="pin-edit" data-unpin="${i}" title="Unpin (the preset stays in Presets)" aria-label="Unpin ${esc(p.request)}">×</button></span>`
       : '')).join('');
   const pages = Math.max(1, Math.ceil(presetList.length / PRESETS_PER_PAGE));
   presetPage = Math.min(Math.max(presetPage, 0), pages - 1); // stays valid after a delete
@@ -761,6 +761,7 @@ function usePreset(request) {
 
 $('presets').addEventListener('click', (e) => {
   const edit = e.target.closest('.pin-edit');
+  if (edit?.dataset.unpin != null) return togglePin(Number(edit.dataset.unpin), edit);
   if (edit) return openPresetDialog(Number(edit.dataset.edit));
   const pinned = e.target.closest('.chip.pinned');
   if (pinned) {
