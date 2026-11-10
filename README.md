@@ -108,9 +108,11 @@ printf "Subject: test\n\nhi" | msmtp you@gmail.com
 | `usersDir` | Where accounts, sessions and each user's project copy are stored. Default `./users`. |
 | `userTemplateDir` | Folder copied to `users/<name>/project/` when a user is added. See [Accounts](#accounts). |
 | `mail` | `{ "from", "command" }`, plus `"to"`, which becomes the admin's email when the admin is created. The command reads a full message on stdin (`msmtp -t`). Each run is emailed to the owner's address from their Account page. Set it to `null` to disable email. Cancelled runs are not emailed. |
-| `presets` | Quick-pick request chips shown in the UI. |
+| `presets` | Starting request chips. After the first edit in the UI they live in `runs/presets.json` (the admin's) or `users/<name>/presets.json`. See [Presets](#presets). |
 | `items.label` | Heading for the per-item list on a run page (e.g. `"Jobs found"`). |
 | `itemActions` | Buttons shown on each item. See [Item actions](#item-actions). |
+| `tracker.label` | Name of the tab that lists applied/evaluated items. Default `"Tracker"`. See [Tracker](#tracker). |
+| `tracker.applicationsFile`, `tracker.scanHistoryFile`, `tracker.reportsDir` | career-ops files the Tracker reads (relative to `projectDir`). Defaults: `data/applications.md`, `data/scan-history.tsv`, `reports`. `null` turns one off. |
 | `pasteAction` | Optional second button on the New job card for long pasted text, e.g. a job description. See [Pasted text](#pasted-text). |
 
 Relative paths are resolved from the repo folder. Set `RUNNER_CONFIG=/path/to/config.json` to use a different config file.
@@ -155,6 +157,36 @@ When Claude lists `items` in `meta.json`, the run page shows them with one butto
   - The button shows Queued…, then the `runningLabel`, then the `doneLabel` plus the job's `badge`. Clicking it after it's done opens the result in a large dialog.
 - Item data always comes from the run's `meta.json` on the server; the browser only sends the item's position in the list.
 - Item state is kept in `runs/items.json`, keyed by the item's URL. A job found again in a later run keeps its Applied/Evaluated state.
+
+## Tracker
+
+The **Tracker** tab lists every item you have acted on across all runs: items where a `command` action succeeded (e.g. Applied), items with a linked `job` (e.g. Evaluated), and evaluations of pasted text.
+
+It also reads a career-ops-style tracker in `projectDir` (read-only; the runner never writes these files):
+
+- **`data/applications.md`**: every table row becomes a Tracker row, merged with the matching runner item when the URL (from the Notes, e.g. `Source: …`) or company + role match. Status `Applied`/`Responded`/`Interview`/`Offer`/`Rejected` marks it applied (date from "Applied YYYY-MM-DD" in the notes, else the Date column); a score or report marks it evaluated, and its button opens the linked report. `Rejected`, `Discarded`, `SKIP`, `Responded`, `Interview` and `Offer` show in the Outcome column. Ghosted/Rejected set in the UI take precedence.
+- **`data/scan-history.tsv`**: `first_seen` gives the Scanned date (matched by URL, else company + title).
+- Rows are re-read on every load, so a row added by hand appears after **Refresh**.
+
+- Columns: title, company, the date the item was first scanned, and one column per item action (with the applied date and note, or the evaluation badge).
+- Filters: company, job title, description (matches item fields, notes, and the first part of the evaluation result or pasted text), status (has/hasn't each action), scanned date range, and date range of the first `command` action.
+- Sort by any column (click its header, or use *Sort by*). Empty values always sort last. Filters and sort are remembered in the browser.
+- Action buttons work here too, so you can mark an evaluated job as applied without going back to its run.
+- The **Details** button on each row opens it as an accordion with the item's history and dates: Scanned → Applied → Evaluated → Ghosted/Rejected → Revised.
+- The **⋯** button on each row has:
+  - **Ghosted** / **Rejected**: records the date and an optional note (pick it again to change the date). *Clear ghosted/rejected* removes it.
+  - **Revise…**: the company came back (e.g. they couldn't find the right candidate). Adds a dated event; there can be several, and each can be removed in Details.
+- The Outcome column shows the current stage. A revision dated on or after the ghosted/rejected date re-opens the item (shown as *Revised*); ghosted/rejected items are dimmed. The Status filter and *Outcome date* sort use this stage.
+- Stored in `runs/items.json` as `_status` and `_revisions`.
+
+## Presets
+
+The request chips under **New job** are edited in the UI. Each chip has a **⋯** menu (*Update*, *Insert new after*, *Delete*), and **+ Preset** adds one at the end. A preset has two fields:
+
+- **Preset**: the request text the chip fills in.
+- **Search rule** (optional): written into `promptFile` inside a managed block (`<!-- presets:start -->` … `<!-- presets:end -->`, heading "Preset rules"). Claude follows it when the request is that preset. Every save keeps the previous prompt in the Rules page's version history. Don't edit inside the block by hand; it is rewritten on every preset change.
+
+Presets are stored in `runs/presets.json`. The first time, they are seeded from `presets` in `config.json`; after that, the config value is ignored. Cron runs without a request use the first preset.
 
 ## Pasted text
 

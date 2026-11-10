@@ -27,6 +27,7 @@ import {
 import { readdirSync } from 'node:fs';
 import { markdownToHtml, emailDocument } from '../lib/markdown.mjs';
 import { findUser, adminUser, userCfg } from '../lib/users.mjs';
+import { readPresets } from '../lib/presets.mjs';
 
 const [, , idArg = 'auto', requestArg = '', trigger = 'cli', userArg = ''] = process.argv;
 
@@ -53,7 +54,7 @@ const promptFile = opts.promptFile
   ? (isAbsolute(opts.promptFile) ? opts.promptFile : resolve(cfg.projectDir, opts.promptFile))
   : cfg.promptFile;
 
-const request = (requestArg || (cfg.presets[0] ?? 'run')).slice(0, 500);
+const request = (requestArg || (readPresets(cfg)[0]?.request ?? 'run')).slice(0, 500);
 writeFileSync(join(dir, 'request.txt'), request + '\n');
 updateStatus(dir, {
   id, user: jobUser?.name ?? null, request, trigger, state: 'queued', pid: process.pid, waiting: Boolean(opts.queue),

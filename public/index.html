@@ -156,6 +156,78 @@
   .narrow { max-width: 520px; }
   .fields label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 4px; }
   .fields input { font: inherit; width: 100%; box-sizing: border-box; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); }
+  .filters { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px 12px; }
+  .filters label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); min-width: 0; }
+  .filters input, .filters select { font: inherit; font-size: 14px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); width: 100%; min-width: 0; }
+  .filters input:focus, .filters select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  .filters .range { display: flex; gap: 6px; align-items: center; }
+  .filters .range span { color: var(--muted); }
+  table.tracker { width: 100%; border-collapse: collapse; font-size: 14px; }
+  table.tracker th { text-align: left; color: var(--muted); font-weight: 600; white-space: nowrap; }
+  table.tracker th, table.tracker td { padding: 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  table.tracker tr:last-child td { border-bottom: 0; }
+  table.tracker th button { background: none; border: 0; padding: 0; font: inherit; color: inherit; cursor: pointer; }
+  table.tracker th button:hover, table.tracker th.sorted button { color: var(--text); }
+  table.tracker td.t-title { min-width: 200px; overflow-wrap: anywhere; }
+  table.tracker td.t-title a { color: var(--accent); font-weight: 600; }
+  table.tracker td.t-title .sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  table.tracker td.nowrap { white-space: nowrap; }
+  table.tracker td .act { font-size: 12px; padding: 4px 10px; }
+  table.tracker .note-line { font-size: 12px; color: var(--muted); max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  button.dots { background: none; border: 1px solid transparent; color: var(--muted); border-radius: 8px; width: 32px; height: 30px; font-size: 18px; line-height: 1; cursor: pointer; }
+  table.tracker td.t-menu { white-space: nowrap; text-align: right; }
+  button.expand { background: none; border: 1px solid var(--border); color: var(--text); border-radius: 8px; padding: 4px 10px; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; vertical-align: middle; margin-right: 2px; }
+  button.expand:hover, button.expand[aria-expanded="true"] { border-color: var(--accent); }
+  button.expand .chev { display: inline-block; transition: transform .15s; }
+  button.expand[aria-expanded="true"] .chev { transform: rotate(180deg); }
+  button.dots { vertical-align: middle; }
+  .card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+  .card-head h2 { margin: 0; }
+  .pager { justify-content: center; gap: 12px; }
+  button.refresh { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+  button.refresh .ic { display: inline-block; font-size: 15px; line-height: 1; }
+  button.refresh.spin .ic { animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  button.dots:hover, button.dots[aria-expanded="true"] { border-color: var(--border); color: var(--text); background: var(--surface-2); }
+  .menu { position: fixed; z-index: 20; min-width: 170px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 4px; box-shadow: 0 8px 24px rgba(0,0,0,.18); }
+  .menu button { display: block; width: 100%; text-align: left; background: none; border: 0; border-radius: 6px; padding: 7px 10px; font: inherit; font-size: 14px; color: var(--text); cursor: pointer; }
+  .menu button:hover, .menu button:focus-visible { background: var(--surface-2); outline: none; }
+  .menu button.on::after { content: ' ✓'; color: var(--muted); }
+  .menu hr { border: 0; border-top: 1px solid var(--border); margin: 4px 0; }
+  .s-rejected { color: var(--err); } .s-ghosted { color: var(--muted); } .s-revised { color: var(--run); }
+  .s-discarded, .s-skip { color: var(--muted); } .s-responded, .s-interview { color: var(--run); } .s-offer { color: var(--ok); }
+  .career-note { font-size: 13px; color: var(--muted); padding: 10px 16px 0; overflow-wrap: anywhere; }
+  .career-note strong { color: var(--text); }
+  table.tracker tr.expanded td { border-bottom-color: transparent; }
+  table.tracker tr.detail-row > td { padding: 0 8px 14px; }
+  .timeline-wrap { background: var(--surface-2); border-radius: 10px; }
+  ol.timeline { list-style: none; margin: 0; padding: 12px 16px; display: grid; gap: 0; }
+  ol.timeline > li { position: relative; display: grid; grid-template-columns: 18px 130px 1fr; gap: 2px 10px; padding: 6px 0; }
+  ol.timeline > li::before { content: ''; position: absolute; left: 5px; top: 20px; bottom: -8px; border-left: 2px solid var(--border); }
+  ol.timeline > li:last-child::before { display: none; }
+  ol.timeline .dot { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--border); background: var(--surface); margin-top: 4px; position: relative; }
+  ol.timeline li.on .dot { border-color: currentColor; background: currentColor; }
+  ol.timeline li.on { color: var(--ok); } ol.timeline li.on.s-rejected { color: var(--err); } ol.timeline li.on.s-ghosted { color: var(--muted); } ol.timeline li.on.s-revised { color: var(--run); } ol.timeline li.on.s-discarded, ol.timeline li.on.s-skip { color: var(--muted); } ol.timeline li.on.s-responded, ol.timeline li.on.s-interview { color: var(--run); }
+  ol.timeline .step { font-weight: 600; color: var(--text); white-space: nowrap; }
+  ol.timeline li:not(.on) .step { color: var(--muted); font-weight: 500; }
+  ol.timeline .what { color: var(--text); font-size: 14px; min-width: 0; overflow-wrap: anywhere; }
+  ol.timeline .what .when { font-weight: 600; }
+  ol.timeline .what .line { color: var(--muted); font-size: 13px; }
+  ol.timeline .what a, ol.timeline .what button.link { color: var(--accent); font-size: 13px; }
+  button.link { background: none; border: 0; padding: 0; font: inherit; cursor: pointer; text-decoration: underline; }
+  button.link.rm { color: var(--muted) !important; text-decoration: none; margin-left: 6px; }
+  @media (max-width: 600px) { ol.timeline > li { grid-template-columns: 18px 1fr; } ol.timeline .what { grid-column: 2; } }
+  .preset { display: inline-flex; align-items: stretch; border: 1px solid var(--border); background: var(--surface-2); border-radius: 999px; overflow: hidden; }
+  .preset:hover { border-color: var(--accent); }
+  .preset .chip { border: 0; border-radius: 0; background: none; padding-right: 6px; }
+  .preset .chip.has-rule::after { content: ' ·'; color: var(--accent); font-weight: 700; }
+  .preset button.dots { width: 26px; height: auto; border: 0; border-left: 1px solid var(--border); border-radius: 0; font-size: 15px; }
+  .chip.add { border-style: dashed; background: none; color: var(--muted); }
+  dialog input[type=text] { width: 100%; font: inherit; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); }
+  dialog textarea.rule { min-height: 160px; font: 13px/1.5 var(--mono); }
+  dialog .hint { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  table.tracker tr.closed td:not(.t-out):not(.t-menu) { opacity: .55; }
+  mark { background: color-mix(in srgb, var(--accent) 25%, transparent); color: inherit; border-radius: 2px; }
   @media (max-width: 600px) {
     dialog.big { width: 100vw; height: 100vh; max-width: 100vw; max-height: 100vh; border-radius: 0; margin: 0; }
   }
@@ -170,6 +242,7 @@
     </div>
     <nav class="tabs" id="tabs">
       <a href="#" id="tab-runs" class="on">Runs</a>
+      <a href="#/tracker" id="tab-tracker">Tracker</a>
     </nav>
   </header>
 
@@ -240,6 +313,38 @@
     <div class="card">
       <h2>Log</h2>
       <pre class="log" id="d-log"></pre>
+    </div>
+  </section>
+  <section id="tracker-view" hidden>
+    <div class="card">
+      <h2>Filter &amp; sort</h2>
+      <div class="filters" id="filters">
+        <label>Company<input type="search" id="f-company" placeholder="e.g. Acme"></label>
+        <label>Job title<input type="search" id="f-title" placeholder="e.g. frontend"></label>
+        <label>Description<input type="search" id="f-desc" placeholder="words in the JD, evaluation or note"></label>
+        <label>Status<select id="f-status"><option value="">All tracked</option></select></label>
+        <label>Scanned<span class="range"><input type="date" id="f-scan-from" aria-label="Scanned from"><span>–</span><input type="date" id="f-scan-to" aria-label="Scanned to"></span></label>
+        <label id="f-applied-wrap"><span id="f-applied-label">Applied</span><span class="range"><input type="date" id="f-applied-from" aria-label="Applied from"><span>–</span><input type="date" id="f-applied-to" aria-label="Applied to"></span></label>
+        <label>Show<select id="f-size"><option value="5">5 per page</option><option value="10" selected>10 per page</option></select></label>
+        <label>Sort by<span class="range"><select id="f-sort"></select><button class="ghost" type="button" id="f-dir" title="Toggle direction" style="padding:6px 10px">↓</button></span></label>
+      </div>
+      <div class="row">
+        <span class="muted" id="t-count" style="font-size:14px"></span>
+        <button class="ghost" type="button" id="f-reset" style="margin-left:auto">Clear filters</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-head">
+        <h2 id="t-heading">Tracked</h2>
+        <button type="button" class="ghost refresh" id="refresh" title="Reload the latest data"><span class="ic" aria-hidden="true">↻</span> Refresh</button>
+      </div>
+      <div class="table-wrap"><table class="tracker" id="t-table"></table></div>
+      <div class="empty" id="t-empty" hidden></div>
+      <div class="row pager" id="t-pager" hidden>
+        <button class="ghost" type="button" id="pg-prev">‹ Previous</button>
+        <span class="muted" id="pg-info" style="font-size:14px"></span>
+        <button class="ghost" type="button" id="pg-next">Next ›</button>
+      </div>
     </div>
   </section>
   <section id="rules-view" hidden>
@@ -336,6 +441,27 @@
   </form>
 </dialog>
 
+<div class="menu" id="menu" role="menu" hidden></div>
+
+<dialog id="preset-dialog">
+  <form method="dialog" id="preset-form">
+    <div class="dlg-head"><h3 id="preset-title">Preset</h3><button class="x" value="cancel" aria-label="Close" formnovalidate>×</button></div>
+    <div class="dlg-body">
+      <label for="preset-request">Preset</label>
+      <input type="text" id="preset-request" maxlength="500" required placeholder="e.g. scan frontend jobs in Helsinki">
+      <div class="hint">The request text. Clicking the chip puts this in the New job box.</div>
+      <label for="preset-rule">Search rule</label>
+      <textarea id="preset-rule" class="rule" maxlength="5000" placeholder="e.g. Only search LinkedIn and Duunitori. Keywords: React, TypeScript, frontend. Location: Helsinki, remote Finland. Skip senior/lead roles."></textarea>
+      <div class="hint" id="preset-rule-hint"></div>
+      <div class="error" id="preset-error"></div>
+    </div>
+    <div class="dlg-foot">
+      <button class="ghost" value="cancel" formnovalidate>Cancel</button>
+      <button class="primary" style="margin:0" value="save" id="preset-save">Save</button>
+    </div>
+  </form>
+</dialog>
+
 <dialog id="info-dialog">
   <div class="dlg-head"><h3 id="info-title"></h3><button class="x" onclick="this.closest('dialog').close()" aria-label="Close">×</button></div>
   <div class="dlg-body" id="info-body"></div>
@@ -379,7 +505,7 @@ let needLogin = false;
 function showLogin() {
   needLogin = true;
   clearTimeout(timer);
-  for (const id of ['list-view', 'detail-view', 'rules-view', 'account-view']) $(id).hidden = true;
+  for (const id of ['list-view', 'detail-view', 'rules-view', 'tracker-view', 'account-view']) $(id).hidden = true;
   $('tabs').hidden = true;
   $('login-view').hidden = false;
   $('login-name').focus();
@@ -487,6 +613,7 @@ async function loadConfig() {
     a.textContent = g.label;
     $('tabs').appendChild(a);
   }
+  setupTracker();
   const acc = document.createElement('a');
   acc.href = '#/account';
   acc.id = 'tab-account';
@@ -500,11 +627,102 @@ async function loadConfig() {
     $('paste-eval').hidden = false;
     $('request').placeholder = `e.g. scan for today — or paste text and press “${cfg.pasteAction.label}”`;
   }
-  $('presets').innerHTML = cfg.presets.map((p) => `<button type="button" class="chip">${esc(p)}</button>`).join('');
-  $('presets').querySelectorAll('.chip').forEach((b) => b.addEventListener('click', () => {
-    $('request').value = b.textContent;
-    $('request').focus();
-  }));
+  presetList = cfg.presets.map((request) => ({ request, rule: '' }));
+  renderPresets();
+  loadPresets();
+}
+
+// ── presets: chip + ⋯ (edit / insert / delete), stored on the server with a search rule ──
+let presetList = [];
+
+async function loadPresets() {
+  try {
+    const { presets, promptFile } = await api('/api/presets');
+    presetList = presets;
+    appCfg.promptFile = promptFile;
+    renderPresets();
+  } catch (err) { console.error(err); }
+}
+
+function renderPresets() {
+  $('presets').innerHTML = presetList.map((p, i) => `<span class="preset">
+      <button type="button" class="chip ${p.rule ? 'has-rule' : ''}" data-i="${i}" title="${esc(p.rule ? `Rule: ${p.rule.slice(0, 200)}` : 'No search rule')}">${esc(p.request)}</button><button type="button" class="dots" data-i="${i}" aria-haspopup="menu" aria-expanded="false" title="Edit preset" aria-label="Preset options">⋯</button>
+    </span>`).join('') + '<button type="button" class="chip add" id="preset-add">+ Preset</button>';
+}
+
+$('presets').addEventListener('click', (e) => {
+  if (e.target.id === 'preset-add') return openPresetDialog(null, presetList.length);
+  const i = Number(e.target.dataset.i);
+  const p = presetList[i];
+  if (!p) return;
+  if (e.target.classList.contains('dots')) {
+    return openMenu(e.target, `preset:${i}`, [
+      { cmd: 'edit', label: 'Update' },
+      { cmd: 'insert', label: 'Insert new after' },
+      'sep',
+      { cmd: 'delete', label: 'Delete' },
+    ], (cmd) => {
+      if (cmd === 'edit') openPresetDialog(i);
+      else if (cmd === 'insert') openPresetDialog(null, i + 1);
+      else deletePreset(i);
+    });
+  }
+  $('request').value = p.request;
+  $('request').focus();
+});
+
+// index: preset to update, or null to insert at `at`.
+function openPresetDialog(index, at) {
+  const p = index == null ? { request: '', rule: '' } : presetList[index];
+  const dlg = $('preset-dialog');
+  $('preset-title').textContent = index == null ? 'New preset' : 'Update preset';
+  $('preset-request').value = p.request;
+  $('preset-rule').value = p.rule;
+  $('preset-rule').disabled = !appCfg.promptFile;
+  $('preset-rule-hint').textContent = appCfg.promptFile
+    ? `Written into ${appCfg.promptFile} under “Preset rules”. Claude follows it when the request is this preset.`
+    : 'No promptFile is configured, so rules cannot be saved.';
+  $('preset-error').textContent = '';
+  dlg.dataset.index = index == null ? '' : String(index);
+  dlg.dataset.at = String(at ?? '');
+  dlg.dataset.expect = index == null ? '' : p.request;
+  dlg.showModal();
+  $('preset-request').focus();
+}
+
+// Save keeps the dialog open on errors (e.g. duplicate text).
+$('preset-form').addEventListener('submit', async (e) => {
+  if (e.submitter?.value !== 'save') return;
+  e.preventDefault();
+  const dlg = $('preset-dialog');
+  const body = { request: $('preset-request').value.trim(), rule: $('preset-rule').value.trim() };
+  if (!body.request) { $('preset-error').textContent = 'Preset text is required.'; return; }
+  $('preset-save').disabled = true;
+  try {
+    const { presets } = dlg.dataset.index === ''
+      ? await api('/api/presets', { method: 'POST', body: JSON.stringify({ ...body, at: Number(dlg.dataset.at) }) })
+      : await api(`/api/presets/${dlg.dataset.index}`, { method: 'PUT', body: JSON.stringify({ ...body, expect: dlg.dataset.expect }) });
+    presetList = presets;
+    renderPresets();
+    dlg.close();
+  } catch (err) {
+    $('preset-error').textContent = err.message;
+  } finally {
+    $('preset-save').disabled = false;
+  }
+});
+
+async function deletePreset(i) {
+  const p = presetList[i];
+  if (!confirm(`Delete the preset “${p.request}”${p.rule ? ' and its search rule' : ''}?`)) return;
+  try {
+    const { presets } = await api(`/api/presets/${i}`, { method: 'DELETE', body: JSON.stringify({ expect: p.request }) });
+    presetList = presets;
+  } catch (err) {
+    alert(err.message);
+    await loadPresets();
+  }
+  renderPresets();
 }
 
 let runsShown = 4; // kept while browsing, so returning from a run keeps the expanded list
@@ -655,7 +873,7 @@ const ITEM_SKIP = new Set(['title', 'url', 'company']);
 const FAILED = ['failed', 'cancelled', 'timeout', 'busy', 'unknown'];
 let itemsCtx = { runId: null, items: [] };
 
-function actionButton(action, st, idx) {
+function actionButton(action, st, idx, runId = '') {
   let cls = '', label = action.label;
   if (action.type === 'job') {
     if (st && ACTIVE.includes(st.state)) { cls = 'busy'; label = st.state === 'queued' ? 'Queued…' : action.runningLabel; }
@@ -663,7 +881,7 @@ function actionButton(action, st, idx) {
     else if (st && FAILED.includes(st.state)) { cls = 'failed'; label = `${action.label} (retry)`; }
   } else if (st?.state === 'done') { cls = 'done'; label = action.doneLabel; }
   else if (st?.state === 'failed') { cls = 'failed'; label = `${action.label} (retry)`; }
-  return `<button type="button" class="act ${cls}" data-idx="${idx}" data-action="${esc(action.id)}">${esc(label)}</button>`;
+  return `<button type="button" class="act ${cls}" data-run="${esc(runId)}" data-idx="${idx}" data-action="${esc(action.id)}">${esc(label)}</button>`;
 }
 
 function renderItems(runId, items) {
@@ -679,7 +897,7 @@ function renderItems(runId, items) {
     const acts = (appCfg.itemActions || []).map((a) => {
       const st = states?.[a.id];
       if (a.type === 'job' && st && ACTIVE.includes(st.state)) busy = true;
-      return actionButton(a, st, index);
+      return actionButton(a, st, index, runId);
     }).join('');
     return `<li class="item">
       <div class="info">${title}${item.company ? ` <span class="company">· ${esc(item.company)}</span>` : ''}
@@ -691,28 +909,34 @@ function renderItems(runId, items) {
   return busy;
 }
 
-$('d-items').addEventListener('click', async (e) => {
+$('d-items').addEventListener('click', (e) => {
   const btn = e.target.closest('button.act');
   if (!btn) return;
   const idx = Number(btn.dataset.idx);
+  handleAction(btn, itemsCtx.runId, idx, itemsCtx.items.find((x) => x.index === idx));
+});
+
+// entry: { item, states }. runId/idx point at the item in a run's meta.json (null: view only).
+function handleAction(btn, runId, idx, entry) {
   const action = (appCfg.itemActions || []).find((a) => a.id === btn.dataset.action);
-  const entry = itemsCtx.items.find((x) => x.index === idx);
   if (!action || !entry) return;
   const st = entry.states?.[action.id];
 
   if (action.type === 'job') {
     if (st && ACTIVE.includes(st.state)) return openRunInfo(action, st);
     if (st?.state === 'done') return openResultDialog(entry.item, st);
-    return runItemAction(idx, action, {});
+    if (runId == null) return;
+    return runItemAction(runId, idx, action, {});
   }
   if (st?.state === 'done') return openNoteInfo(action, entry.item, st);
-  if (action.askNote) return openNoteDialog(idx, action, entry.item);
-  if (confirm(`${action.label}: ${entry.item.title || ''}?`)) runItemAction(idx, action, {});
-});
+  if (runId == null) return;
+  if (action.askNote) return openNoteDialog(runId, idx, action, entry.item);
+  if (confirm(`${action.label}: ${entry.item.title || ''}?`)) runItemAction(runId, idx, action, {});
+}
 
-async function runItemAction(idx, action, body) {
+async function runItemAction(runId, idx, action, body) {
   try {
-    await api(`/api/runs/${itemsCtx.runId}/items/${idx}/actions/${action.id}`, { method: 'POST', body: JSON.stringify(body) });
+    await api(`/api/runs/${runId}/items/${idx}/actions/${action.id}`, { method: 'POST', body: JSON.stringify(body) });
     return true;
   } catch (err) {
     alert(err.message);
@@ -722,7 +946,7 @@ async function runItemAction(idx, action, body) {
   }
 }
 
-function openNoteDialog(idx, action, item) {
+function openNoteDialog(runId, idx, action, item) {
   const dlg = $('note-dialog');
   $('note-title').textContent = action.label;
   $('note-sub').textContent = [item.title, item.company].filter(Boolean).join(' · ');
@@ -732,7 +956,7 @@ function openNoteDialog(idx, action, item) {
   dlg.returnValue = '';
   dlg.onclose = async () => {
     if (dlg.returnValue !== 'save') return;
-    await runItemAction(idx, action, { note: $('note-text').value.trim(), date: $('note-date').value });
+    await runItemAction(runId, idx, action, { note: $('note-text').value.trim(), date: $('note-date').value });
   };
   dlg.showModal();
   $('note-text').focus();
@@ -763,10 +987,18 @@ async function openResultDialog(item, st) {
   $('big-title').textContent = [item.title, item.company].filter(Boolean).join(' · ');
   $('big-meta').innerHTML = `${st.badge ? `<span class="badge s-done">${esc(st.badge)}</span>` : ''}
     ${st.summary ? `<span class="muted" style="font-size:14px">${esc(st.summary)}</span>` : ''}
-    <a class="back" href="#/run/${esc(st.runId)}" onclick="this.closest('dialog').close()">Open run →</a>`;
+    ${st.runId ? `<a class="back" href="#/run/${esc(st.runId)}" onclick="this.closest('dialog').close()">Open run →</a>`
+      : st.report ? `<span class="muted" style="font-size:13px">reports/${esc(st.report)}</span>` : ''}`;
   $('big-body').innerHTML = '<p class="muted">Loading…</p>';
   dlg.showModal();
   try {
+    if (!st.runId) {
+      // Evaluated in career-ops: show its report, if the row links one.
+      const md = st.report ? (await api(`/api/tracker/report?name=${encodeURIComponent(st.report)}`)).markdown : null;
+      $('big-body').innerHTML = md ? renderMarkdown(md) : '<p class="muted">No report is linked in applications.md.</p>';
+      $('big-body').scrollTop = 0;
+      return;
+    }
     const r = await api(`/api/runs/${st.runId}`);
     $('big-body').innerHTML = r.result ? renderMarkdown(r.result) : '<p class="muted">No result was written.</p>';
     $('big-body').scrollTop = 0;
@@ -775,6 +1007,436 @@ async function openResultDialog(item, st) {
   }
 }
 
+
+// ── tracker view ───────────────────────────────────────────────────────────
+
+const TRACKER_KEY = 'tracker-filters';
+const FILTER_IDS = ['f-company', 'f-title', 'f-desc', 'f-status', 'f-scan-from', 'f-scan-to', 'f-applied-from', 'f-applied-to', 'f-sort', 'f-size'];
+const PAGE_SIZES = ['5', '10'];
+let page = 1;
+let trackerCtx = { items: [] };
+let sortDir = 'desc';
+
+const pad2 = (n) => String(n).padStart(2, '0');
+const localDay = (iso) => {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? '' : `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+};
+function fmtDay(day) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day || '')) return '';
+  const [y, m, d] = day.split('-').map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+}
+const commandAction = () => (appCfg.itemActions || []).find((a) => a.type === 'command');
+
+function setupTracker() {
+  const actions = appCfg.itemActions || [];
+  $('tab-tracker').textContent = appCfg.trackerLabel || 'Tracker';
+  $('t-heading').dataset.label = appCfg.trackerLabel || 'Tracker';
+  $('f-status').innerHTML = '<option value="">All tracked</option>' + actions.map((a) =>
+    `<option value="has:${esc(a.id)}">${esc(a.doneLabel)}</option><option value="not:${esc(a.id)}">Not ${esc(a.label.toLowerCase())}</option>`).join('') +
+    '<option value="out:none">Still open</option><option value="out:ghosted">Ghosted</option><option value="out:rejected">Rejected</option><option value="out:revised">Revised</option>' +
+    ['responded', 'interview', 'offer', 'discarded', 'skip'].map((k) => `<option value="out:${k}">${OUTCOME_LABEL[k]}</option>`).join('');
+  const cmd = commandAction();
+  $('f-applied-wrap').hidden = !cmd;
+  if (cmd) $('f-applied-label').textContent = `${cmd.label} date`;
+  $('f-sort').innerHTML = [
+    ['scanned', 'Date scanned'],
+    ...actions.map((a) => [`a:${a.id}`, a.type === 'command' ? `${a.label} date` : `${a.label} result`]),
+    ['outcome', 'Outcome date'],
+    ['company', 'Company'],
+    ['title', 'Job title'],
+  ].map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join('');
+
+  try {
+    const saved = JSON.parse(localStorage.getItem(TRACKER_KEY) || 'null');
+    if (saved) {
+      for (const id of FILTER_IDS) if (saved[id] != null) $(id).value = saved[id];
+      if (!PAGE_SIZES.includes($('f-size').value)) $('f-size').value = '10';
+      if (!$('f-sort').value) $('f-sort').value = 'scanned';
+      if (saved.dir === 'asc' || saved.dir === 'desc') sortDir = saved.dir;
+    }
+  } catch {}
+  $('f-dir').textContent = sortDir === 'asc' ? '↑' : '↓';
+
+  $('filters').addEventListener('input', onFilterChange);
+  $('f-dir').addEventListener('click', () => { sortDir = sortDir === 'asc' ? 'desc' : 'asc'; onFilterChange(); });
+  $('f-reset').addEventListener('click', () => {
+    for (const id of FILTER_IDS) if (id !== 'f-sort' && id !== 'f-size') $(id).value = '';
+    onFilterChange();
+  });
+  $('t-table').addEventListener('click', (e) => {
+    const th = e.target.closest('th[data-sort] button');
+    if (th) {
+      const key = th.parentElement.dataset.sort;
+      if ($('f-sort').value === key) sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+      else { $('f-sort').value = key; sortDir = ['company', 'title'].includes(key) ? 'asc' : 'desc'; }
+      return onFilterChange();
+    }
+    const exp = e.target.closest('button.expand');
+    if (exp) {
+      const key = exp.dataset.key;
+      openRows.has(key) ? openRows.delete(key) : openRows.add(key);
+      return renderTracker();
+    }
+    const dots = e.target.closest('button.dots');
+    if (dots) return openRowMenu(dots);
+    const btn = e.target.closest('button.act');
+    if (!btn) return;
+    const entry = trackerCtx.items.find((x) => x.key === btn.dataset.key);
+    if (entry) handleAction(btn, entry.runId, entry.index, entry);
+  });
+  $('t-table').addEventListener('click', (e) => {
+    const res = e.target.closest('button[data-result]');
+    if (res) {
+      const entry = trackerCtx.items.find((x) => x.key === res.dataset.key);
+      const st = entry?.states?.[res.dataset.result];
+      if (st) openResultDialog(entry.item, st);
+      return;
+    }
+    const rm = e.target.closest('button[data-rm-rev]');
+    if (rm) {
+      const entry = trackerCtx.items.find((x) => x.key === rm.dataset.key);
+      if (entry && confirm('Remove this revision?')) saveRevision(entry, { remove: Number(rm.dataset.rmRev) });
+    }
+  });
+  $('menu').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-cmd]');
+    if (!b) return;
+    const pick = menuState.onPick;
+    closeMenu();
+    pick?.(b.dataset.cmd);
+  });
+  document.addEventListener('click', (e) => {
+    if (!$('menu').hidden && !e.target.closest('#menu, button.dots')) closeMenu();
+  });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeMenu(); });
+  window.addEventListener('scroll', closeMenu, true);
+  window.addEventListener('resize', closeMenu);
+}
+
+// ── generic ⋯ menu ──
+// items: [{ cmd, label, on? } | 'sep']; onPick(cmd). Same button again closes it.
+const menuState = { owner: null, onPick: null };
+
+function openMenu(btn, ownerId, items, onPick) {
+  const wasOpen = menuState.owner === ownerId && !$('menu').hidden;
+  closeMenu();
+  if (wasOpen) return;
+  menuState.owner = ownerId;
+  menuState.onPick = onPick;
+  const menu = $('menu');
+  menu.innerHTML = items.map((it) => it === 'sep' ? '<hr>'
+    : `<button type="button" role="menuitem" data-cmd="${esc(it.cmd)}" class="${it.on ? 'on' : ''}">${esc(it.label)}</button>`).join('');
+  menu.hidden = false;
+  btn.setAttribute('aria-expanded', 'true');
+  const r = btn.getBoundingClientRect();
+  const m = menu.getBoundingClientRect();
+  menu.style.left = `${Math.max(8, Math.min(r.right - m.width, window.innerWidth - m.width - 8))}px`;
+  menu.style.top = `${r.bottom + m.height + 8 > window.innerHeight ? Math.max(8, r.top - m.height - 4) : r.bottom + 4}px`;
+  menu.querySelector('button')?.focus();
+}
+
+function closeMenu() {
+  if ($('menu').hidden) return;
+  $('menu').hidden = true;
+  document.querySelectorAll('button.dots[aria-expanded="true"]').forEach((b) => b.setAttribute('aria-expanded', 'false'));
+  menuState.owner = menuState.onPick = null;
+}
+
+// ── tracker rows: details, ghosted / rejected, revise ──
+const OUTCOME_LABEL = {
+  ghosted: 'Ghosted', rejected: 'Rejected', revised: 'Revised',
+  responded: 'Responded', interview: 'Interview', offer: 'Offer', discarded: 'Discarded', skip: 'Skip',
+};
+const CLOSED = ['ghosted', 'rejected', 'discarded', 'skip'];
+const CAREER_OUTCOMES = ['rejected', 'responded', 'interview', 'offer', 'discarded', 'skip'];
+
+// Outcome set in this UI, else the status from applications.md (rejected, interview, …).
+function outcomeOf(x) {
+  if (x.outcome) return x.outcome;
+  const c = x.career;
+  if (c && CAREER_OUTCOMES.includes(c.status)) {
+    return { status: c.status, date: c.status === 'rejected' ? c.rejectedDate : null, note: '', career: true };
+  }
+  return null;
+}
+const openRows = new Set(); // keys whose details are expanded (kept across refreshes)
+
+// Current stage: a revision dated on/after the ghosted/rejected date re-opens the item.
+function stageOf(x) {
+  const last = x.revisions?.at(-1);
+  const o = outcomeOf(x);
+  if (last && (!o || !o.date || last.date >= o.date)) return 'revised';
+  return o?.status || 'none';
+}
+const stageDate = (x) => {
+  const st = stageOf(x);
+  return st === 'revised' ? x.revisions.at(-1).date : st === 'none' ? null : outcomeOf(x)?.date || null;
+};
+
+function openRowMenu(btn) {
+  const entry = trackerCtx.items.find((x) => x.key === btn.dataset.key);
+  if (!entry) return;
+  const items = [
+    { cmd: 'ghosted', label: 'Ghosted', on: entry.outcome?.status === 'ghosted' },
+    { cmd: 'rejected', label: 'Rejected', on: entry.outcome?.status === 'rejected' },
+    { cmd: 'revise', label: 'Revise…' },
+  ];
+  if (entry.outcome) items.push('sep', { cmd: 'clear', label: 'Clear ghosted/rejected' });
+  openMenu(btn, `row:${entry.key}`, items, (cmd) => {
+    if (cmd === 'revise') openReviseDialog(entry);
+    else if (cmd === 'clear') { if (confirm(`Clear the ${entry.outcome.status} status of “${entry.item.title || ''}”?`)) saveOutcome(entry, null); }
+    else openOutcomeDialog(entry, cmd);
+  });
+}
+
+// The note dialog, reused: title, preset values, placeholder, and what Save does.
+function noteDialog({ title, entry, date, note, placeholder, onSave }) {
+  const dlg = $('note-dialog');
+  const defaultPh = 'e.g. applied via company site, cover letter v2, contact: …';
+  $('note-title').textContent = title;
+  $('note-sub').textContent = [entry.item.title, entry.item.company].filter(Boolean).join(' · ');
+  $('note-date').value = date || localDay(new Date().toISOString());
+  $('note-text').value = note || '';
+  $('note-text').placeholder = placeholder || defaultPh;
+  $('note-error').textContent = '';
+  dlg.returnValue = '';
+  dlg.onclose = () => {
+    $('note-text').placeholder = defaultPh;
+    if (dlg.returnValue === 'save') onSave($('note-date').value, $('note-text').value.trim());
+  };
+  dlg.showModal();
+  $('note-date').focus();
+}
+
+function openOutcomeDialog(entry, status) {
+  const same = entry.outcome?.status === status;
+  noteDialog({
+    title: `Mark as ${OUTCOME_LABEL[status].toLowerCase()}`, entry,
+    date: same ? entry.outcome.date : '', note: same ? entry.outcome.note : '',
+    placeholder: status === 'rejected' ? 'e.g. rejection email after first interview' : 'e.g. no reply 3 weeks after applying',
+    onSave: (date, note) => saveOutcome(entry, status, date, note),
+  });
+}
+
+function openReviseDialog(entry) {
+  noteDialog({
+    title: 'Revise', entry,
+    placeholder: 'e.g. recruiter came back: they could not find the right candidate, second round on Monday',
+    onSave: (date, note) => saveRevision(entry, { date, note }),
+  });
+}
+
+async function saveOutcome(entry, status, date, note) {
+  try {
+    await api('/api/tracker/status', { method: 'POST', body: JSON.stringify({ key: entry.key, status, date, note }) });
+  } catch (err) {
+    alert(err.message);
+  }
+  route();
+}
+
+async function saveRevision(entry, body) {
+  try {
+    await api('/api/tracker/revisions', { method: 'POST', body: JSON.stringify({ key: entry.key, ...body }) });
+    openRows.add(entry.key); // show the new event
+  } catch (err) {
+    alert(err.message);
+  }
+  route();
+}
+
+// Accordion body: the item's history as five steps.
+function timelineHtml(x) {
+  const actions = appCfg.itemActions || [];
+  const step = (label, on, cls, what) =>
+    `<li class="${on ? 'on' : ''} ${cls || ''}"><span class="dot"></span><span class="step">${esc(label)}</span><div class="what">${what}</div></li>`;
+  const when = (text) => `<span class="when">${esc(text)}</span>`;
+  const line = (text) => (text ? `<div class="line">${esc(text)}</div>` : '');
+  const notYet = '<span class="muted">Not yet</span>';
+  const out = [];
+
+  const scanWhen = x.scanPortal ? fmtDay(localDay(x.scannedAt)) : fmtDate(x.scannedAt);
+  const scanFrom = x.runId ? ` · <a href="#/run/${esc(x.runId)}">open run</a>`
+    : x.scanPortal ? ` <span class="muted">· scan-history (${esc(x.scanPortal)})</span>`
+    : x.career ? '' : ' <span class="muted">· pasted text</span>';
+  out.push(step('Scanned', Boolean(x.scannedAt), '', x.scannedAt
+    ? `${when(scanWhen)}${scanFrom}`
+    : x.career ? '<span class="muted">Not in scan history (added manually)</span>' : notYet));
+
+  for (const a of actions.filter((a) => a.type === 'command')) {
+    const st = x.states?.[a.id];
+    out.push(step(a.doneLabel.replace(/\s*✓$/, ''), Boolean(st), '', st
+      ? `${when(fmtDay(st.date) || fmtDate(st.at))}${line(st.note)}`
+      : notYet));
+  }
+  for (const a of actions.filter((a) => a.type === 'job')) {
+    const st = x.states?.[a.id];
+    let what = notYet;
+    if (st && ACTIVE.includes(st.state)) what = `<span class="muted">${esc(st.state === 'queued' ? 'Queued…' : a.runningLabel)}</span>`;
+    else if (st?.state === 'done') {
+      what = `${when(st.day ? fmtDay(st.day) : fmtDate(st.finishedAt || st.startedAt))}${st.badge ? ` <span class="badge s-done">${esc(st.badge)}</span>` : ''}${line(st.summary)}
+        ${st.runId || st.report ? `<button type="button" class="link" data-result="${esc(a.id)}" data-key="${esc(x.key)}">${st.runId ? 'Open result' : 'Open report'}</button>` : ''}`;
+    } else if (st) what = `<span class="badge s-failed">${esc(st.state)}</span>`;
+    out.push(step(a.doneLabel, st?.state === 'done', '', what));
+  }
+
+  const o = outcomeOf(x);
+  out.push(step('Ghosted / Rejected', Boolean(o), o ? `s-${o.status}` : '', o
+    ? `<span class="badge s-${esc(o.status)}">${esc(OUTCOME_LABEL[o.status] || o.status)}</span> ${when(fmtDay(o.date))}${line(o.career ? 'From applications.md' : o.note)}`
+    : '<span class="muted">—</span>'));
+
+  const revs = x.revisions || [];
+  out.push(step('Revised', revs.length > 0, 's-revised', revs.length
+    ? revs.map((r, i) => `<div>${when(fmtDay(r.date))}<button type="button" class="link rm" data-rm-rev="${i}" data-key="${esc(x.key)}" title="Remove" aria-label="Remove revision">×</button>${line(r.note)}</div>`).join('')
+    : '<span class="muted">— use ⋯ → Revise when the company comes back</span>'));
+
+  const c = x.career;
+  const note = c ? `<div class="career-note"><strong>applications.md #${esc(c.num)}</strong> · ${esc(c.statusLabel || c.status)}${c.date ? ` · ${esc(fmtDay(c.date))}` : ''}${c.notes ? `<br>${esc(c.notes)}` : ''}</div>` : '';
+  return `<div class="timeline-wrap">${note}<ol class="timeline">${out.join('')}</ol></div>`;
+}
+
+$('pg-prev').addEventListener('click', () => { page--; renderTracker(); });
+$('pg-next').addEventListener('click', () => { page++; renderTracker(); });
+
+// Any filter/sort/page-size change starts again at page 1.
+function onFilterChange() {
+  page = 1;
+  $('f-dir').textContent = sortDir === 'asc' ? '↑' : '↓';
+  try {
+    const saved = Object.fromEntries(FILTER_IDS.map((id) => [id, $(id).value]));
+    localStorage.setItem(TRACKER_KEY, JSON.stringify({ ...saved, dir: sortDir }));
+  } catch {}
+  renderTracker();
+}
+
+async function refreshTracker() {
+  const { items } = await api('/api/tracker');
+  trackerCtx = { items };
+  renderTracker();
+  return items.some((x) => Object.values(x.states || {}).some((st) => st && ACTIVE.includes(st.state)));
+}
+
+const words = (q) => q.toLowerCase().split(/\s+/).filter(Boolean);
+const hasAll = (text, ws) => { const t = String(text || '').toLowerCase(); return ws.every((w) => t.includes(w)); };
+const inRange = (day, from, to) => (!from && !to) || (day && (!from || day >= from) && (!to || day <= to));
+
+function sortValue(x, key) {
+  if (key === 'scanned') return x.scannedAt ? Date.parse(x.scannedAt) : null;
+  if (key === 'company') return (x.item.company || '').toLowerCase() || null;
+  if (key === 'title') return (x.item.title || '').toLowerCase() || null;
+  if (key === 'outcome') return stageDate(x);
+  const action = (appCfg.itemActions || []).find((a) => `a:${a.id}` === key);
+  const st = action && x.states?.[action.id];
+  if (!st) return null;
+  if (action.type === 'command') return st.date || localDay(st.at) || null;
+  const n = parseFloat(String(st.badge ?? '').replace(',', '.'));
+  return Number.isFinite(n) ? n : (st.badge || st.state || null);
+}
+
+function filteredItems() {
+  const company = words($('f-company').value), title = words($('f-title').value), desc = words($('f-desc').value);
+  const status = $('f-status').value;
+  const cmd = commandAction();
+  const [sf, st, af, at] = ['f-scan-from', 'f-scan-to', 'f-applied-from', 'f-applied-to'].map((id) => $(id).value);
+  const list = trackerCtx.items.filter((x) => {
+    const it = x.item;
+    if (!hasAll(it.company, company) || !hasAll(it.title, title)) return false;
+    if (desc.length && !hasAll(`${Object.values(it).join(' ')}\n${x.text}`, desc)) return false;
+    if (status) {
+      const [kind, id] = status.split(':');
+      if (kind === 'out' && stageOf(x) !== id) return false;
+      if (kind === 'has' && !x.states?.[id]) return false;
+      if (kind === 'not' && x.states?.[id]) return false;
+    }
+    if (!inRange(localDay(x.scannedAt), sf, st)) return false;
+    if (cmd) {
+      const a = x.states?.[cmd.id];
+      if (!inRange(a ? (a.date || localDay(a.at)) : '', af, at)) return false;
+    }
+    return true;
+  });
+  const key = $('f-sort').value || 'scanned';
+  const dir = sortDir === 'asc' ? 1 : -1;
+  return list.sort((a, b) => {
+    const va = sortValue(a, key), vb = sortValue(b, key);
+    if (va == null && vb == null) return 0;
+    if (va == null) return 1; // empty values always last
+    if (vb == null) return -1;
+    if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * dir;
+    return String(va).localeCompare(String(vb)) * dir;
+  });
+}
+
+// Escapes text and marks the filter words in it.
+function hl(text, ws) {
+  const s = String(text ?? '');
+  if (!ws.length || !s) return esc(s);
+  const re = new RegExp(`(${ws.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`, 'gi');
+  return s.split(re).map((part, i) => (i % 2 ? `<mark>${esc(part)}</mark>` : esc(part))).join('');
+}
+
+function renderTracker() {
+  const actions = appCfg.itemActions || [];
+  const all = filteredItems();
+  const total = trackerCtx.items.length;
+  const size = Number($('f-size').value) || 10;
+  const pages = Math.max(1, Math.ceil(all.length / size));
+  page = Math.min(Math.max(1, page), pages);
+  const from = (page - 1) * size;
+  const list = all.slice(from, from + size);
+  $('t-heading').textContent = `${$('t-heading').dataset.label || 'Tracker'} (${total})`;
+  $('t-count').textContent = !all.length ? `0 of ${total}`
+    : `Showing ${from + 1}–${from + list.length} of ${all.length}${all.length === total ? '' : ` (filtered from ${total})`}`;
+  $('t-pager').hidden = pages <= 1;
+  $('pg-info').textContent = `Page ${page} of ${pages}`;
+  $('pg-prev').disabled = page <= 1;
+  $('pg-next').disabled = page >= pages;
+  $('t-empty').hidden = all.length > 0;
+  $('t-empty').textContent = total ? 'Nothing matches these filters.' : 'Nothing tracked yet. Items show up here once you apply to or evaluate them, or when data/applications.md has rows.';
+  if (menuState.owner?.startsWith('row:') && !list.some((x) => `row:${x.key}` === menuState.owner)) closeMenu(); // a refresh keeps an open menu for a row still shown
+  if (!list.length) { $('t-table').innerHTML = ''; return; }
+
+  const sortKey = $('f-sort').value || 'scanned';
+  const arrow = sortDir === 'asc' ? ' ↑' : ' ↓';
+  const th = (key, label) => key
+    ? `<th data-sort="${esc(key)}" class="${sortKey === key ? 'sorted' : ''}"><button type="button">${esc(label)}${sortKey === key ? arrow : ''}</button></th>`
+    : `<th>${esc(label)}</th>`;
+  const qt = words($('f-title').value), qc = words($('f-company').value);
+
+  $('t-table').innerHTML = `<thead><tr>${th('title', 'Job title')}${th('company', 'Company')}${th('scanned', 'Scanned')}${
+    actions.map((a) => th(`a:${a.id}`, a.type === 'command' ? a.doneLabel.replace(/\s*✓$/, '') : a.doneLabel)).join('')}${th('outcome', 'Outcome')}<th><span hidden>Menu</span></th></tr></thead><tbody>${
+    list.map((x) => {
+      const it = x.item;
+      const title = it.url
+        ? `<a href="${esc(it.url)}" target="_blank" rel="noopener noreferrer">${hl(it.title || it.url, qt)}</a>`
+        : `<strong>${hl(it.title || '(untitled)', qt)}</strong>`;
+      const sub = [it.location ? esc(it.location) : '', x.runId ? `<a class="back" href="#/run/${esc(x.runId)}" style="font-size:12px">found in run</a>` : '',
+        x.career ? `applications.md #${esc(x.career.num)}` : ''].filter(Boolean);
+      const cells = actions.map((a) => {
+        const st = x.states?.[a.id];
+        if (!st && x.runId == null) return '<td class="muted">—</td>';
+        const btn = actionButton(a, st, x.index, x.runId ?? '').replace('<button ', `<button data-key="${esc(x.key)}" `);
+        return `<td class="nowrap">${btn}</td>`;
+      }).join('');
+      const stage = stageOf(x);
+      const outCell = stage !== 'none'
+        ? `<td class="nowrap t-out"><span class="badge s-${esc(stage)}">${esc(OUTCOME_LABEL[stage])}</span></td>`
+        : '<td class="t-out muted">—</td>';
+      const open = openRows.has(x.key);
+      const cols = 5 + actions.length;
+      return `<tr class="${CLOSED.includes(stage) ? 'closed' : ''} ${open ? 'expanded' : ''}">
+        <td class="t-title">${title}${sub.length ? `<div class="sub">${sub.join(' · ')}</div>` : ''}</td>
+        <td>${hl(it.company || '', qc) || '<span class="muted">—</span>'}</td>
+        <td class="nowrap">${esc(fmtDay(localDay(x.scannedAt))) || '<span class="muted">—</span>'}</td>
+        ${cells}
+        ${outCell}
+        <td class="t-menu"><button type="button" class="expand" data-key="${esc(x.key)}" aria-expanded="${open}" title="${open ? 'Hide details' : 'Show details'}">Details <span class="chev">▾</span></button><button type="button" class="dots" data-key="${esc(x.key)}" aria-haspopup="menu" aria-expanded="${menuState.owner === `row:${x.key}`}" title="More" aria-label="More options">⋯</button></td>
+      </tr>${open ? `<tr class="detail-row"><td colspan="${cols}">${timelineHtml(x)}</td></tr>` : ''}`;
+    }).join('')}</tbody>`;
+}
 
 // ── rules view ─────────────────────────────────────────────────────────────
 
@@ -895,12 +1557,33 @@ window.addEventListener('beforeunload', (e) => {
 
 // ── routing + polling ──────────────────────────────────────────────────────
 
+// Tracker: manual refresh of the tracker data.
+$('refresh').addEventListener('click', async () => {
+  const btn = $('refresh');
+  if (btn.disabled) return;
+  btn.disabled = true;
+  btn.classList.add('spin');
+  const started = Date.now();
+  try {
+    await refreshTracker();
+  } catch (err) {
+    alert(err.message);
+  } finally {
+    setTimeout(() => { // keep the spin visible briefly so the click is noticeable
+      btn.disabled = false;
+      btn.classList.remove('spin');
+      btn.title = `Updated ${new Date().toLocaleTimeString()}`;
+    }, Math.max(0, 400 - (Date.now() - started)));
+  }
+});
+
 let lastHash = location.hash;
 
 function highlightTab() {
   const group = location.hash.match(/^#\/edit\/([\w-]+)/)?.[1];
-  const want = location.hash === '#/account' ? 'tab-account' : 'tab-runs';
-  $('tabs').querySelectorAll('a').forEach((a) => a.classList.toggle('on', group ? a.dataset.group === group : a.id === want));
+  const tabs = { '#/tracker': 'tab-tracker', '#/account': 'tab-account' };
+  const current = group ? null : tabs[location.hash] || 'tab-runs';
+  $('tabs').querySelectorAll('a').forEach((a) => a.classList.toggle('on', group ? a.dataset.group === group : a.id === current));
 }
 
 async function route() {
@@ -909,7 +1592,7 @@ async function route() {
   const account = location.hash === '#/account';
   $('account-view').hidden = !account;
   if (account) {
-    for (const id of ['list-view', 'detail-view', 'rules-view']) $(id).hidden = true;
+    for (const id of ['list-view', 'detail-view', 'rules-view', 'tracker-view']) $(id).hidden = true;
     highlightTab();
     showAccount().catch((err) => formMsg('email-msg', err.message));
     return;
@@ -918,7 +1601,9 @@ async function route() {
   if (/^#\/rules/.test(location.hash)) { location.replace('#/edit/rules'); return; } // old links
   const edit = location.hash.match(/^#\/edit\/([\w-]+)(?:\/(\d+))?$/);
   const historyPage = location.hash === '#/history';
-  $('list-view').hidden = Boolean(run || edit);
+  const tracker = location.hash === '#/tracker';
+  $('list-view').hidden = Boolean(run || edit || tracker);
+  $('tracker-view').hidden = !tracker;
   $('new-job').hidden = historyPage;
   $('history-back').hidden = !historyPage;
   $('detail-view').hidden = !run;
@@ -931,7 +1616,7 @@ async function route() {
   }
   let active = false;
   try {
-    active = run ? await refreshDetail(run[1]) : await refreshList(historyPage);
+    active = run ? await refreshDetail(run[1]) : tracker ? await refreshTracker() : await refreshList(historyPage);
   } catch (err) {
     console.error(err);
   }

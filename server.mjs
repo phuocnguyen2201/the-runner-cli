@@ -12,11 +12,14 @@ import {
 import { editableFiles, fileGroups, fileInfo, readEditable, saveEditable, readVersion } from './lib/files.mjs';
 import {
   itemActions, publicActions, itemKey, cleanItem, fillTemplate, readStore, updateItemState, runCommandAction,
+  OUTCOMES, setItemOutcome, changeRevisions,
 } from './lib/items.mjs';
 import {
   hasUsers, findUser, adminUser, listUsers, createUser, updateUser, verifyPassword,
   createSession, sessionUser, deleteSession, runOwner, canSee, userCfg,
 } from './lib/users.mjs';
+import { readPresets, changePresets } from './lib/presets.mjs';
+import { readApplications, readScanHistory, readReport, pairKey, APPLIED_STATES } from './lib/career.mjs';
 
 const cfg = loadConfig();
 const host = resolveHost(cfg.host);
@@ -74,11 +77,13 @@ const server = createServer(async (req, res) => {
       return json(res, 200, {
         user,
         project: basename(ucfg.projectDir),
-        presets: cfg.presets,
+        presets: readPresets(ucfg).map((p) => p.request),
+        promptFile: ucfg.promptFile ? basename(ucfg.promptFile) : null,
         mail: ucfg.mail?.command ? ucfg.mail.to || null : null,
         timeout: cfg.timeout,
         groups: fileGroups(ucfg),
         itemsLabel: cfg.items?.label || 'Items',
+        trackerLabel: cfg.tracker?.label || 'Tracker',
         itemActions: publicActions(cfg),
         pasteAction: cfg.pasteAction ? { label: cfg.pasteAction.label || 'Evaluate pasted text' } : null,
       });
@@ -100,6 +105,31 @@ const server = createServer(async (req, res) => {
     if (req.method === 'GET' && path === '/api/runs') {
       const limit = Number(url.searchParams.get('limit')) || Infinity;
       return json(res, 200, { active: activeRunId(user), ...listRuns(user, limit) });
+    }
+    if (req.method === 'GET' && path === '/api/tracker') {
+      return json(res, 200, { active: activeRunId(user), items: trackedItems(ucfg, user) });
+    }
+    if (req.method === 'GET' && path === '/api/tracker/report') {
+      const markdown = readReport(ucfg, url.searchParams.get('name'));
+      return markdown == null ? json(res, 404, { error: 'report not found' }) : json(res, 200, { markdown });
+    }
+    if (req.method === 'POST' && path === '/api/tracker/status') {
+      return await setOutcome(req, res, ucfg, user);
+    }
+    if (req.method === 'POST' && path === '/api/tracker/revisions') {
+      return await changeRevision(req, res, ucfg, user);
+    }
+    if (req.method === 'GET' && path === '/api/presets') {
+      return json(res, 200, { presets: readPresets(ucfg), promptFile: ucfg.promptFile ? basename(ucfg.promptFile) : null });
+    }
+    const pr = path.match(/^\/api\/presets(?:\/(\d+))?$/);
+    if (pr && ['POST', 'PUT', 'DELETE'].includes(req.method)) {
+      const body = await readBody(req, 64 * 1024);
+      const index = pr[1] == null ? null : Number(pr[1]);
+      const op = req.method === 'POST' ? { type: 'insert', at: body.at, preset: body }
+        : { type: req.method === 'PUT' ? 'update' : 'delete', index, expect: body.expect, preset: body };
+      if ((op.type === 'insert') !== (index == null)) return json(res, 404, { error: 'not found' });
+      return json(res, 200, { presets: changePresets(ucfg, op) });
     }
     if (req.method === 'POST' && path === '/api/runs') {
       return await startRun(req, res, user);
@@ -216,6 +246,7 @@ async function itemAction(req, res, runId, index, actionId) {
   const item = cleanItem(raw);
   const key = itemKey(item);
   const body = await readBody(req);
+  const snapshot = { _item: item, _src: { runId, index } };
 
   if (action.type === 'command') {
     const date = /^\d{4}-\d{2}-\d{2}$/.test(body.date || '') ? body.date : new Date().toISOString().slice(0, 10);
@@ -223,7 +254,7 @@ async function itemAction(req, res, runId, index, actionId) {
     const result = await runCommandAction(ocfg, action, { item, note, date, action: action.id });
     const state = updateItemState(ocfg, key, action.id, {
       state: result.ok ? 'done' : 'failed', at: new Date().toISOString(), date, note, output: result.output,
-    });
+    }, snapshot);
     return json(res, result.ok ? 200 : 500, { ...state[action.id], error: result.ok ? undefined : `Action failed: ${result.output || `exit ${result.code}`}` });
   }
 
@@ -237,7 +268,7 @@ async function itemAction(req, res, runId, index, actionId) {
   const runIdNew = spawnJob(owner?.name, request, `action:${action.id}`, {
     queue: true, action: action.id, itemKey: key, promptFile: action.promptFile || null,
   });
-  updateItemState(ocfg, key, action.id, { runId: runIdNew, at: new Date().toISOString() });
+  updateItemState(ocfg, key, action.id, { runId: runIdNew, at: new Date().toISOString() }, snapshot);
   json(res, 202, jobState(runIdNew));
 }
 
@@ -245,7 +276,10 @@ function jobState(runId) {
   const dir = runDir(cfg, runId);
   const status = checkStale(dir, readJson(join(dir, 'status.json'), {}));
   const meta = readJson(join(dir, 'meta.json'), null);
-  return { runId, state: status.state || 'unknown', badge: meta?.badge ?? null, summary: meta?.summary ?? null };
+  return {
+    runId, state: status.state || 'unknown', badge: meta?.badge ?? null, summary: meta?.summary ?? null,
+    startedAt: status.startedAt || status.createdAt || null, finishedAt: status.finishedAt || null,
+  };
 }
 
 // Items of a run with the state of each action.
@@ -265,6 +299,189 @@ function runItems(dir) {
     }
     return { index, item, states };
   });
+}
+
+// Tracker: every item with a finished command action (e.g. Applied) or a linked job (e.g. Evaluated),
+// plus pasted-text evaluations, plus every row of the career-ops applications.md (read-only),
+// with the date the item was first seen in a run or in scan-history.tsv.
+const TEXT_LIMIT = 4000;
+
+// Personal: only the user's own runs and files, also for the admin.
+function trackedItems(ucfg, user) {
+  const store = readStore(ucfg);
+  const admin = adminName();
+  const actions = itemActions(cfg);
+  const pasteAction = actions.find((a) => a.type === 'job'); // pasted evaluations show in this column
+  const ids = readdirSync(cfg.runsDir).filter((name) => RUN_ID_RE.test(name)).sort(); // oldest first
+  const firstSeen = new Map(); // item key -> { item, runId, index, at, trigger } (every item in any run)
+  const seenByPair = new Map(); // company|title -> item key
+  const pastes = [];
+
+  for (const id of ids) {
+    const dir = runDir(cfg, id);
+    const status = readJson(join(dir, 'status.json'), {});
+    if (runOwner(status, admin) !== user.name) continue;
+    const items = readJson(join(dir, 'meta.json'), null)?.items;
+    if (status.trigger === 'paste') pastes.push(id);
+    if (!Array.isArray(items)) continue;
+    items.forEach((raw, index) => {
+      const item = cleanItem(raw);
+      const key = itemKey(item);
+      if (!firstSeen.has(key)) {
+        firstSeen.set(key, { item, runId: id, index, at: status.startedAt || status.createdAt || null, trigger: status.trigger });
+        const pk = pairKey(item.company, item.title);
+        if (!seenByPair.has(pk)) seenByPair.set(pk, key);
+      }
+    });
+  }
+
+  const out = [];
+  const keys = new Set();
+  for (const [key, saved] of Object.entries(store)) {
+    const seen = firstSeen.get(key);
+    const src = seen || (saved._item ? { item: saved._item, runId: saved._src?.runId ?? null, index: saved._src?.index ?? null, at: null } : null);
+    if (!src) continue;
+    const states = {};
+    let tracked = false;
+    for (const a of actions) {
+      const s = saved[a.id];
+      if (a.type === 'job') {
+        let runId = s?.runId;
+        if (!runId && a === pasteAction && seen?.trigger === 'paste') runId = seen.runId; // evaluated by pasting
+        states[a.id] = runId && existsSync(runDir(cfg, runId)) ? jobState(runId) : null;
+      } else {
+        states[a.id] = s?.state === 'done' ? { state: s.state, at: s.at, date: s.date, note: s.note } : null;
+      }
+      if (states[a.id]) tracked = true;
+    }
+    if (!tracked) continue;
+    keys.add(key);
+    out.push(trackerEntry(key, src, states, saved._status, saved._revisions));
+  }
+
+  // Pasted evaluations whose item was never acted on.
+  for (const id of pastes) {
+    if (!pasteAction) break;
+    const st = jobState(id);
+    if (!['done', 'queued', 'running'].includes(st.state)) continue;
+    const dir = runDir(cfg, id);
+    const status = readJson(join(dir, 'status.json'), {});
+    const raw = readJson(join(dir, 'meta.json'), null)?.items?.[0];
+    const item = cleanItem(raw);
+    const key = raw ? itemKey(item) : `paste:${id}`;
+    if (keys.has(key)) continue;
+    if (!item.title) item.title = st.summary || 'Pasted text';
+    keys.add(key);
+    const states = Object.fromEntries(actions.map((a) => [a.id, a === pasteAction ? st : null]));
+    out.push(trackerEntry(key, { item, runId: raw ? id : null, index: raw ? 0 : null, at: status.startedAt || status.createdAt || null, pasteRunId: id }, states, store[key]?._status, store[key]?._revisions));
+  }
+
+  mergeApplications(ucfg, out, keys, store, actions, firstSeen, seenByPair);
+  return out;
+}
+
+// Rows of applications.md: merged into a matching entry (same URL, or same company + title),
+// otherwise added as their own entry. Runner items found in a scan keep their run link and buttons.
+function mergeApplications(ucfg, out, keys, store, actions, firstSeen, seenByPair) {
+  const apps = readApplications(ucfg);
+  if (!apps.length) return;
+  const scans = readScanHistory(ucfg);
+  const cmd = actions.find((a) => a.type === 'command');
+  const job = actions.find((a) => a.type === 'job');
+  const byKey = new Map(out.map((e) => [e.key, e]));
+  const byPair = new Map();
+  for (const e of out) {
+    const pk = pairKey(e.item.company, e.item.title);
+    if (!byPair.has(pk)) byPair.set(pk, e);
+  }
+
+  for (const r of apps) {
+    const pk = pairKey(r.company, r.role);
+    const urlKey = r.url ? itemKey({ url: r.url }) : null;
+    let entry = (urlKey && byKey.get(urlKey)) || byPair.get(pk);
+    if (entry?.career) entry = null; // two rows for the same job: keep both
+    if (!entry) {
+      let key = urlKey && firstSeen.has(urlKey) ? urlKey : seenByPair.get(pk) || urlKey || `app:${pk}`;
+      if (keys.has(key)) key = `app:${r.num}:${pk}`;
+      const seen = firstSeen.get(key);
+      const item = seen?.item || cleanItem({ title: r.role, company: r.company, url: r.url });
+      const states = Object.fromEntries(actions.map((a) => [a.id, null]));
+      entry = trackerEntry(key, { item, runId: seen?.runId ?? null, index: seen?.index ?? null, at: seen?.at ?? null }, states, store[key]?._status, store[key]?._revisions);
+      out.push(entry);
+      keys.add(key);
+      byKey.set(key, entry);
+      byPair.set(pk, entry);
+    }
+
+    entry.career = { num: r.num, status: r.status, statusLabel: r.statusLabel, date: r.date, score: r.score, report: r.report, notes: r.notes, rejectedDate: r.rejectedDate };
+    if (cmd && !entry.states[cmd.id] && APPLIED_STATES.has(r.status)) {
+      entry.states[cmd.id] = { state: 'done', date: r.appliedDate, note: `From applications.md #${r.num}`, source: 'career' };
+    }
+    if (job && !entry.states[job.id] && (r.score || r.report)) {
+      entry.states[job.id] = { state: 'done', badge: r.score, summary: null, day: r.evaluatedDate, report: r.report, source: 'career' };
+    }
+    const scan = (r.url && scans.byUrl.get(r.url)) || scans.byPair.get(pk);
+    if (scan) {
+      const at = `${scan.firstSeen}T12:00:00Z`; // a day, not a time: noon UTC stays on that day in any zone
+      if (!entry.scannedAt || Date.parse(at) < Date.parse(entry.scannedAt)) {
+        entry.scannedAt = at;
+        entry.scanPortal = scan.portal;
+      }
+    }
+    const report = r.report ? readReport(ucfg, r.report)?.slice(0, TEXT_LIMIT) : '';
+    entry.text = [entry.text, r.notes, report].filter(Boolean).join('\n');
+  }
+}
+
+// Mark a tracked item ghosted/rejected (or clear it). Only keys the tracker lists are accepted.
+async function setOutcome(req, res, ucfg, user) {
+  const body = await readBody(req);
+  const key = String(body.key ?? '');
+  const status = body.status == null ? null : String(body.status);
+  if (status && !OUTCOMES.includes(status)) return json(res, 400, { error: `status must be one of: ${OUTCOMES.join(', ')}` });
+  if (!trackedItems(ucfg, user).some((x) => x.key === key)) return json(res, 404, { error: 'item not found in tracker' });
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(body.date || '') ? body.date : new Date().toISOString().slice(0, 10);
+  const outcome = status ? { status, date, note: String(body.note ?? '').slice(0, 2000), at: new Date().toISOString() } : null;
+  json(res, 200, { outcome: setItemOutcome(ucfg, key, outcome) });
+}
+
+// Add a "Revised" event ({key, date, note}) or remove one ({key, remove: index}).
+async function changeRevision(req, res, ucfg, user) {
+  const body = await readBody(req);
+  const key = String(body.key ?? '');
+  if (!trackedItems(ucfg, user).some((x) => x.key === key)) return json(res, 404, { error: 'item not found in tracker' });
+  const revisions = changeRevisions(ucfg, key, (list) => {
+    if (body.remove != null) {
+      if (!Number.isInteger(body.remove) || !list[body.remove]) throw Object.assign(new Error('revision not found'), { status: 404 });
+      list.splice(body.remove, 1);
+      return list;
+    }
+    const date = /^\d{4}-\d{2}-\d{2}$/.test(body.date || '') ? body.date : new Date().toISOString().slice(0, 10);
+    if (list.length >= 50) throw Object.assign(new Error('too many revisions'), { status: 400 });
+    list.push({ date, note: String(body.note ?? '').slice(0, 2000), at: new Date().toISOString() });
+    return list.sort((a, b) => a.date.localeCompare(b.date) || a.at.localeCompare(b.at));
+  });
+  json(res, 200, { revisions });
+}
+
+function trackerEntry(key, src, states, outcome = null, revisions = null) {
+  const revs = (Array.isArray(revisions) ? revisions : []).map((r) => ({ date: r.date, note: r.note || '' }));
+  const parts = [src.item.description, outcome?.note, ...revs.map((r) => r.note), ...Object.values(states).flatMap((s) => [s?.summary, s?.note])];
+  for (const s of Object.values(states)) {
+    if (s?.runId && s.state === 'done') parts.push(readText(join(runDir(cfg, s.runId), 'result.md'))?.slice(0, TEXT_LIMIT));
+  }
+  if (src.pasteRunId) parts.push(readText(join(runDir(cfg, src.pasteRunId), 'input.md'))?.slice(0, TEXT_LIMIT));
+  return {
+    key,
+    item: src.item,
+    runId: src.runId ?? null, // run the item was found in; null when actions can't be run from here
+    index: src.index ?? null,
+    scannedAt: src.at ?? null,
+    states,
+    outcome: outcome?.status ? { status: outcome.status, date: outcome.date, note: outcome.note || '' } : null,
+    revisions: revs,
+    text: parts.filter(Boolean).join('\n'),
+  };
 }
 
 function cancelRun(res, dir) {
