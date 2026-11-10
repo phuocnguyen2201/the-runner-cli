@@ -68,3 +68,15 @@ test('createUser copies the template; sessions resolve and expire on logout', ()
   deleteSession(cfg, token);
   assert.equal(sessionUser(cfg, token), null);
 });
+
+test('saving a file whose folder is missing in a user copy creates the folder', async () => {
+  const { saveEditable } = await import('../lib/files.mjs');
+  const { writeJsonAtomic } = await import('../lib/config.mjs');
+  const root = mkdtempSync(join(tmpdir(), 'runner-save-'));
+  const cfg = { runsDir: join(root, 'runs'), versionsDir: join(root, 'v') };
+  const file = { id: 0, label: 'Profile', path: join(root, 'proj', 'config', 'profile.yml'), group: 'Rules', groupSlug: 'rules' };
+  saveEditable(cfg, file, 'name: x\n', 0);
+  assert.equal(readFileSync(file.path, 'utf8'), 'name: x\n');
+  writeJsonAtomic(join(root, 'users', 'amy', 'items.json'), { a: 1 });
+  assert.ok(existsSync(join(root, 'users', 'amy', 'items.json')));
+});

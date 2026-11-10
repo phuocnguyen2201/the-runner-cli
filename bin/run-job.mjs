@@ -61,6 +61,16 @@ updateStatus(dir, {
   action: opts.action ?? null, itemKey: opts.itemKey ?? null, createdAt: new Date().toISOString(),
 });
 
+// A user's project copy may lack files the job needs (e.g. gitignored in the template): fail with a clear reason.
+const missing = !existsSync(cfg.projectDir) ? `project folder not found: ${cfg.projectDir}`
+  : promptFile && !existsSync(promptFile) ? `prompt file not found: ${promptFile} (create it on the Rules page or add it to the template)`
+  : null;
+if (missing) {
+  updateStatus(dir, { state: 'failed', finishedAt: new Date().toISOString(), reason: missing });
+  console.error(missing);
+  process.exit(1);
+}
+
 let cancelledWhileQueued = false;
 const onQueuedSignal = () => { cancelledWhileQueued = true; };
 process.on('SIGTERM', onQueuedSignal);
