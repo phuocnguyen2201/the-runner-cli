@@ -24,6 +24,8 @@
   "timeout": "90m",
   "envFile": null,
   "runsDir": "./runs",
+  "usersDir": "./users",
+  "userTemplateDir": "/home/pi/runner-template",
   "mail": {
     "to": "you@example.com",
     "from": null,

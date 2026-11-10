@@ -105,13 +105,31 @@ printf "Subject: test\n\nhi" | msmtp you@gmail.com
 | `timeout` | Kill the job after this long: `90m`, `2h`, `300s`. |
 | `envFile` | Optional `KEY=VALUE` file loaded before running Claude, e.g. `CLAUDE_CODE_OAUTH_TOKEN`. |
 | `runsDir` | Where run history is stored. Default `./runs`. |
-| `mail` | `{ "to", "from", "command" }`. The command reads a full message on stdin (`msmtp -t`). Set it to `null` to disable email. Cancelled runs are not emailed. |
+| `usersDir` | Where accounts, sessions and each user's project copy are stored. Default `./users`. |
+| `userTemplateDir` | Folder copied to `users/<name>/project/` when a user is added. See [Accounts](#accounts). |
+| `mail` | `{ "from", "command" }`, plus `"to"`, which becomes the admin's email when the admin is created. The command reads a full message on stdin (`msmtp -t`). Each run is emailed to the owner's address from their Account page. Set it to `null` to disable email. Cancelled runs are not emailed. |
 | `presets` | Quick-pick request chips shown in the UI. |
 | `items.label` | Heading for the per-item list on a run page (e.g. `"Jobs found"`). |
 | `itemActions` | Buttons shown on each item. See [Item actions](#item-actions). |
 | `pasteAction` | Optional second button on the New job card for long pasted text, e.g. a job description. See [Pasted text](#pasted-text). |
 
 Relative paths are resolved from the repo folder. Set `RUNNER_CONFIG=/path/to/config.json` to use a different config file.
+
+## Accounts
+
+Everyone logs in with a name and password. There is no public sign-up: the admin adds users.
+
+```bash
+node bin/user.mjs add phuoc --admin            # once; asks for a password, takes mail.to as the email
+node bin/user.mjs passwd <name>                # reset a password
+node bin/user.mjs list
+```
+
+- **Admin**: works in `projectDir`, owns every run that has no `user` field (all runs from before accounts existed) and sees every user's runs. The admin adds users on the **Account** page (or `node bin/user.mjs add <name> --email …`).
+- **Other users** each get a copy of `userTemplateDir` at `users/<name>/project/`. Their jobs run in that folder, so their profile, CV, rules, portals, prompt, `CLAUDE.md` and data are all separate. `promptFile` and `editableFiles` paths inside `projectDir` point at the same file in the user's copy. Item state is kept in `users/<name>/items.json`.
+  - Make the template a clean copy of your project with blank or sample files. A fresh clone of the upstream project works.
+- Everyone sets the email their results go to on the **Account** page. Leave it empty to get no email.
+- One Claude job runs at a time for everyone. A user's job waits (first in, first out) while someone else's runs.
 
 ## Item actions
 
@@ -181,7 +199,7 @@ browser ──(Access login)──> Pages: runner.example.com
                                                                          Cloudflare Tunnel ──> Pi :8787
 ```
 
-The server has no login of its own, so **Cloudflare Access is what keeps strangers out**. Do every step below. You need a domain on Cloudflare (`example.com` here).
+The server has its own login (see [Accounts](#accounts)), but **Cloudflare Access is still the outer gate**: add each user's email to the UI's Allow policy. Do every step below. You need a domain on Cloudflare (`example.com` here).
 
 1. **Tunnel on the Pi** ([install cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/)):
    ```bash
@@ -233,15 +251,18 @@ Use the line from `examples/crontab.txt`:
 0 7 * * 1,3,5  /usr/bin/env node $HOME/claude-runner-ui/bin/run-job.mjs auto "run the daily job" cron >> $HOME/claude-runner-ui/runs/cron.log 2>&1
 ```
 
+This runs as the admin. To schedule a job for another user, add their name after `cron`, e.g. `… "run the daily job" cron bob >> …`.
+
 Manual run from a shell:
 ```bash
-node bin/run-job.mjs auto "your request" cli
+node bin/run-job.mjs auto "your request" cli [user]
 ```
 
 ## Security notes
 
 - The server only listens on the Tailscale interface by default. Anyone on your tailnet can start jobs, so use Tailscale ACLs if you share the tailnet.
-- With the Cloudflare Pages setup, Cloudflare Access is the only login. Keep the API hostname on a Service Auth policy and cover every UI hostname (including `pages.dev`) with an Allow policy.
+- Every API call except login needs a session token (sent as the `X-Runner-Token` header, valid 30 days). Passwords are stored as scrypt hashes in `users/users.json`. Users only see their own runs and files; the admin sees all runs. There is no login rate limit, so keep Access/Tailscale in front.
+- With the Cloudflare Pages setup, Cloudflare Access stays the outer gate. Keep the API hostname on a Service Auth policy and cover every UI hostname (including `pages.dev`) with an Allow policy.
 - Requests are passed to the runner as a single argument and never go through a shell. They are capped at 500 characters.
 - Claude can only use the tools in `allowedTools`. Keep the list as narrow as your job allows.
 - The Rules page can only open files listed in `editableFiles`. Files are addressed by their position in that list, never by a path sent from the browser. The last 20 versions of each file are kept in `runs/.versions/`.

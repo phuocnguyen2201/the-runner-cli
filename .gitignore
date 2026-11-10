@@ -2,6 +2,7 @@ config.json
 .env
 .env.*
 runs/*
+users/
 !runs/.gitkeep
 node_modules/
 .DS_Store

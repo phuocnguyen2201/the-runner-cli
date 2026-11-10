@@ -7,22 +7,27 @@ import { spawn, execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync, readdirSync, existsSync, statSync, openSync, readSync, closeSync, mkdirSync } from 'node:fs';
 import { join, basename, isAbsolute, resolve } from 'node:path';
 import {
-  ROOT, RUN_ID_RE, loadConfig, newRunId, runDir, readJson, updateStatus, isAlive, activeLock,
+  ROOT, RUN_ID_RE, loadConfig, newRunId, runDir, readJson, updateStatus, isAlive,
 } from './lib/config.mjs';
 import { editableFiles, fileGroups, fileInfo, readEditable, saveEditable, readVersion } from './lib/files.mjs';
 import {
   itemActions, publicActions, itemKey, cleanItem, fillTemplate, readStore, updateItemState, runCommandAction,
 } from './lib/items.mjs';
+import {
+  hasUsers, findUser, adminUser, listUsers, createUser, updateUser, verifyPassword,
+  createSession, sessionUser, deleteSession, runOwner, canSee, userCfg,
+} from './lib/users.mjs';
 
 const cfg = loadConfig();
 const host = resolveHost(cfg.host);
 const INDEX = join(ROOT, 'public', 'index.html');
 const MAX_REQUEST = 500;
 const MAX_PASTE = 50_000;
-let startingId = null; // run spawned by this server that may not hold the lock yet
 let lastSpawnedId = null;
+const ACTIVE = ['queued', 'running'];
 
 recoverStaleRuns();
+if (!hasUsers(cfg)) console.warn('⚠️  No accounts yet. Create the admin: node bin/user.mjs add <name> --admin --email you@example.com');
 for (const a of itemActions(cfg)) {
   if (a.type === 'job' && a.promptFile) {
     const p = isAbsolute(a.promptFile) ? a.promptFile : resolve(cfg.projectDir, a.promptFile);
@@ -42,50 +47,78 @@ const server = createServer(async (req, res) => {
     if (req.method === 'GET' && (path === '/' || path === '/index.html')) {
       return send(res, 200, readFileSync(INDEX), 'text/html; charset=utf-8');
     }
+    if (req.method === 'POST' && path === '/api/login') return await login(req, res);
+    if (!path.startsWith('/api/')) return json(res, 404, { error: 'not found' });
+
+    const token = req.headers['x-runner-token'];
+    const user = sessionUser(cfg, token);
+    if (!user) return json(res, 401, { error: 'login required' });
+    const ucfg = userCfg(cfg, user);
+
+    if (req.method === 'POST' && path === '/api/logout') {
+      deleteSession(cfg, token);
+      return json(res, 200, { ok: true });
+    }
+    if (path === '/api/me') {
+      if (req.method === 'GET') return json(res, 200, user);
+      if (req.method === 'PUT') return await updateMe(req, res, user);
+    }
+    if (path === '/api/users' && user.admin) {
+      if (req.method === 'GET') return json(res, 200, { users: listUsers(cfg) });
+      if (req.method === 'POST') {
+        const body = await readBody(req);
+        return json(res, 201, createUser(cfg, { name: body.name, email: body.email || null, password: body.password }));
+      }
+    }
     if (req.method === 'GET' && path === '/api/config') {
       return json(res, 200, {
-        project: basename(cfg.projectDir),
+        user,
+        project: basename(ucfg.projectDir),
         presets: cfg.presets,
-        mail: Boolean(cfg.mail?.to),
+        mail: ucfg.mail?.command ? ucfg.mail.to || null : null,
         timeout: cfg.timeout,
-        groups: fileGroups(cfg),
+        groups: fileGroups(ucfg),
         itemsLabel: cfg.items?.label || 'Items',
         itemActions: publicActions(cfg),
         pasteAction: cfg.pasteAction ? { label: cfg.pasteAction.label || 'Evaluate pasted text' } : null,
       });
     }
     if (req.method === 'GET' && path === '/api/files') {
-      return json(res, 200, { files: editableFiles(cfg).map(fileInfo), active: activeRunId() });
+      return json(res, 200, { files: editableFiles(ucfg).map(fileInfo), active: activeRunId(user) });
     }
     const f = path.match(/^\/api\/files\/(\d+)(?:\/versions\/([\w-]+))?$/);
     if (f) {
-      const file = editableFiles(cfg)[Number(f[1])];
+      const file = editableFiles(ucfg)[Number(f[1])];
       if (!file) return json(res, 404, { error: 'file not found' });
-      if (req.method === 'GET' && f[2]) return json(res, 200, { content: readVersion(cfg, file, f[2]) });
-      if (req.method === 'GET') return json(res, 200, readEditable(cfg, file));
+      if (req.method === 'GET' && f[2]) return json(res, 200, { content: readVersion(ucfg, file, f[2]) });
+      if (req.method === 'GET') return json(res, 200, readEditable(ucfg, file));
       if (req.method === 'PUT' && !f[2]) {
         const body = await readBody(req, 2 * 1024 * 1024);
-        return json(res, 200, saveEditable(cfg, file, body.content, body.baseMtimeMs));
+        return json(res, 200, saveEditable(ucfg, file, body.content, body.baseMtimeMs));
       }
     }
     if (req.method === 'GET' && path === '/api/runs') {
       const limit = Number(url.searchParams.get('limit')) || Infinity;
-      return json(res, 200, { active: activeRunId(), ...listRuns(limit) });
+      return json(res, 200, { active: activeRunId(user), ...listRuns(user, limit) });
     }
     if (req.method === 'POST' && path === '/api/runs') {
-      return startRun(req, res);
+      return await startRun(req, res, user);
     }
     if (req.method === 'POST' && path === '/api/runs/paste') {
-      return startPasteRun(req, res);
+      return await startPasteRun(req, res, user);
     }
 
+    // Other users' runs are "not found"; the admin can open every run.
     const a = path.match(/^\/api\/runs\/(\d{8}-\d{6})\/items\/(\d+)\/actions\/([\w-]+)$/);
-    if (a && req.method === 'POST') return itemAction(req, res, a[1], Number(a[2]), a[3]);
+    if (a && req.method === 'POST') {
+      if (!existsSync(runDir(cfg, a[1])) || !canSee(user, runStatus(a[1]), adminName())) return json(res, 404, { error: 'run not found' });
+      return await itemAction(req, res, a[1], Number(a[2]), a[3]);
+    }
 
     const m = path.match(/^\/api\/runs\/([^/]+)(\/cancel)?$/);
     if (m && RUN_ID_RE.test(m[1])) {
       const dir = runDir(cfg, m[1]);
-      if (!existsSync(dir)) return json(res, 404, { error: 'run not found' });
+      if (!existsSync(dir) || !canSee(user, runStatus(m[1]), adminName())) return json(res, 404, { error: 'run not found' });
       if (req.method === 'GET' && !m[2]) return json(res, 200, runDetail(m[1], dir));
       if (req.method === 'POST' && m[2]) return cancelRun(res, dir);
     }
@@ -103,25 +136,43 @@ server.listen(cfg.port, host, () => {
 
 // ── handlers ───────────────────────────────────────────────────────────────
 
-async function startRun(req, res) {
-  if (activeRunId()) {
-    return json(res, 409, { error: 'A job is already running.' });
+async function login(req, res) {
+  const body = await readBody(req);
+  const u = findUser(cfg, String(body.name ?? '').trim().toLowerCase());
+  if (!u || !verifyPassword(body.password, u)) return json(res, 401, { error: 'wrong name or password' });
+  json(res, 200, { token: createSession(cfg, u.name), user: { name: u.name, admin: Boolean(u.admin), email: u.email || null } });
+}
+
+async function updateMe(req, res, user) {
+  const body = await readBody(req);
+  const patch = {};
+  if (body.email !== undefined) patch.email = String(body.email ?? '').trim();
+  if (body.password !== undefined) {
+    if (!verifyPassword(body.currentPassword, findUser(cfg, user.name))) return json(res, 403, { error: 'current password is wrong' });
+    patch.password = body.password;
+  }
+  json(res, 200, updateUser(cfg, user.name, patch));
+}
+
+// Jobs from all users share one Claude lock, so web runs queue behind each other (FIFO).
+async function startRun(req, res, user) {
+  if (activeRunId(user)) {
+    return json(res, 409, { error: 'You already have a job running.' });
   }
   const body = await readBody(req);
   const request = String(body.request ?? '').trim();
   if (!request) return json(res, 400, { error: 'request is required' });
   if (request.length > MAX_REQUEST) return json(res, 400, { error: `request is longer than ${MAX_REQUEST} characters` });
 
-  startingId = spawnJob(request, 'web');
-  json(res, 202, { id: startingId });
+  json(res, 202, { id: spawnJob(user.name, request, 'web', { queue: true }) });
 }
 
 // Pasted text (e.g. a job description) goes to runs/<id>/input.md and runs with pasteAction.promptFile.
-async function startPasteRun(req, res) {
+async function startPasteRun(req, res, user) {
   const pa = cfg.pasteAction;
   if (!pa) return json(res, 404, { error: 'pasteAction is not configured' });
-  if (activeRunId()) {
-    return json(res, 409, { error: 'A job is already running.' });
+  if (activeRunId(user)) {
+    return json(res, 409, { error: 'You already have a job running.' });
   }
   const body = await readBody(req, 256 * 1024);
   const text = String(body.text ?? '').trim();
@@ -129,20 +180,20 @@ async function startPasteRun(req, res) {
   if (text.length > MAX_PASTE) return json(res, 400, { error: `text is longer than ${MAX_PASTE} characters` });
 
   const request = String(pa.request || pa.label || 'Evaluate the pasted text').slice(0, MAX_REQUEST);
-  startingId = spawnJob(request, 'paste', { promptFile: pa.promptFile || null }, text);
-  json(res, 202, { id: startingId });
+  json(res, 202, { id: spawnJob(user.name, request, 'paste', { queue: true, promptFile: pa.promptFile || null }, text) });
 }
 
 // Detached + argv array: survives the browser and server going away, no shell parsing of the request.
-function spawnJob(request, trigger, opts = null, input = null) {
+function spawnJob(userName, request, trigger, opts = null, input = null) {
   let id = newRunId();
   while (existsSync(runDir(cfg, id)) || id === lastSpawnedId) id = newRunId(new Date(Date.now() + 1000));
   lastSpawnedId = id;
   const dir = runDir(cfg, id);
   mkdirSync(dir, { recursive: true });
   if (input) writeFileSync(join(dir, 'input.md'), input + '\n');
-  updateStatus(dir, { id, request, trigger, state: 'queued', waiting: Boolean(opts?.queue), createdAt: new Date().toISOString() });
-  const child = spawn(process.execPath, [join(ROOT, 'bin', 'run-job.mjs'), id, request, trigger], {
+  updateStatus(dir, { id, user: userName ?? null, request, trigger, state: 'queued', waiting: Boolean(opts?.queue), createdAt: new Date().toISOString() });
+  const argv = [join(ROOT, 'bin', 'run-job.mjs'), id, request, trigger, ...(userName ? [userName] : [])];
+  const child = spawn(process.execPath, argv, {
     cwd: ROOT,
     detached: true,
     stdio: 'ignore',
@@ -155,6 +206,8 @@ function spawnJob(request, trigger, opts = null, input = null) {
 
 async function itemAction(req, res, runId, index, actionId) {
   const dir = runDir(cfg, runId);
+  const owner = ownerOf(runStatus(runId)); // item state and follow-up jobs belong to the run's owner
+  const ocfg = userCfg(cfg, owner);
   const action = itemActions(cfg).find((x) => x.id === actionId);
   const raw = readJson(join(dir, 'meta.json'), {})?.items?.[index];
   if (!existsSync(dir) || !action || !raw) return json(res, 404, { error: 'item or action not found' });
@@ -167,24 +220,24 @@ async function itemAction(req, res, runId, index, actionId) {
   if (action.type === 'command') {
     const date = /^\d{4}-\d{2}-\d{2}$/.test(body.date || '') ? body.date : new Date().toISOString().slice(0, 10);
     const note = String(body.note ?? '').slice(0, 2000);
-    const result = await runCommandAction(cfg, action, { item, note, date, action: action.id });
-    const state = updateItemState(cfg, key, action.id, {
+    const result = await runCommandAction(ocfg, action, { item, note, date, action: action.id });
+    const state = updateItemState(ocfg, key, action.id, {
       state: result.ok ? 'done' : 'failed', at: new Date().toISOString(), date, note, output: result.output,
     });
     return json(res, result.ok ? 200 : 500, { ...state[action.id], error: result.ok ? undefined : `Action failed: ${result.output || `exit ${result.code}`}` });
   }
 
   // type "job": reuse a queued/running job for this item instead of starting a duplicate
-  const linked = readStore(cfg)[key]?.[action.id];
+  const linked = readStore(ocfg)[key]?.[action.id];
   if (linked?.runId) {
     const st = jobState(linked.runId);
     if (['queued', 'running'].includes(st.state)) return json(res, 200, st);
   }
   const request = fillTemplate(action.request || `${action.label}: {title} {url}`, item);
-  const runIdNew = spawnJob(request, `action:${action.id}`, {
+  const runIdNew = spawnJob(owner?.name, request, `action:${action.id}`, {
     queue: true, action: action.id, itemKey: key, promptFile: action.promptFile || null,
   });
-  updateItemState(cfg, key, action.id, { runId: runIdNew, at: new Date().toISOString() });
+  updateItemState(ocfg, key, action.id, { runId: runIdNew, at: new Date().toISOString() });
   json(res, 202, jobState(runIdNew));
 }
 
@@ -199,7 +252,7 @@ function jobState(runId) {
 function runItems(dir) {
   const items = readJson(join(dir, 'meta.json'), {})?.items;
   if (!Array.isArray(items)) return [];
-  const store = readStore(cfg);
+  const store = readStore(userCfg(cfg, ownerOf(readJson(join(dir, 'status.json'), {}))));
   const actions = itemActions(cfg);
   return items.map((raw, index) => {
     const item = cleanItem(raw);
@@ -225,28 +278,39 @@ function cancelRun(res, dir) {
 
 // ── data ───────────────────────────────────────────────────────────────────
 
-function activeRunId() {
-  const locked = activeLock(cfg)?.id;
-  if (locked) return locked;
-  if (startingId) {
-    const dir = runDir(cfg, startingId);
-    const status = checkStale(dir, readJson(join(dir, 'status.json'), {}));
-    if (status.state === 'queued') return startingId;
-    startingId = null;
+const adminName = () => adminUser(cfg)?.name ?? null;
+const runStatus = (id) => readJson(join(runDir(cfg, id), 'status.json'), {});
+const ownerOf = (status) => findUser(cfg, runOwner(status, adminName()));
+
+// The user's own newest queued/running run (follow-up item jobs only once they run).
+function activeRunId(user) {
+  const admin = adminName();
+  const ids = readdirSync(cfg.runsDir).filter((name) => RUN_ID_RE.test(name)).sort().reverse().slice(0, 50);
+  for (const id of ids) {
+    const status = runStatus(id);
+    if (!ACTIVE.includes(status.state) || runOwner(status, admin) !== user.name) continue;
+    if (status.state === 'queued' && String(status.trigger).startsWith('action:')) continue;
+    if (ACTIVE.includes(checkStale(runDir(cfg, id), status).state)) return id;
   }
   return null;
 }
 
-// Newest first; only the first `limit` run folders are read.
-function listRuns(limit = Infinity) {
+// Newest first; details are read for the first `limit` runs the user can see.
+function listRuns(user, limit = Infinity) {
+  const admin = adminName();
   const ids = readdirSync(cfg.runsDir).filter((name) => RUN_ID_RE.test(name)).sort().reverse();
-  const runs = ids.slice(0, limit).map((id) => {
+  const runs = [];
+  let total = 0;
+  for (const id of ids) {
+    if (!user.admin && !canSee(user, runStatus(id), admin)) continue;
+    total++;
+    if (runs.length >= limit) continue;
     const dir = runDir(cfg, id);
     const status = checkStale(dir, readJson(join(dir, 'status.json'), { id, state: 'unknown' }));
     const meta = readJson(join(dir, 'meta.json'), null);
-    return { ...status, id, summary: meta?.summary ?? null, sources: meta?.sources ?? null };
-  });
-  return { total: ids.length, runs };
+    runs.push({ ...status, id, user: runOwner(status, admin), summary: meta?.summary ?? null, sources: meta?.sources ?? null });
+  }
+  return { total, runs };
 }
 
 function runDetail(id, dir) {
@@ -254,6 +318,7 @@ function runDetail(id, dir) {
   return {
     ...status,
     id,
+    user: runOwner(status, adminName()),
     meta: readJson(join(dir, 'meta.json'), null),
     items: runItems(dir),
     input: readText(join(dir, 'input.md')),

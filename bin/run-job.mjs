@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Run one headless Claude Code job and record it in runs/<id>/.
 //
-// Usage: node bin/run-job.mjs <run-id|auto> "<request>" [web|cron|cli|action:<id>]
+// Usage: node bin/run-job.mjs <run-id|auto> "<request>" [web|cron|cli|action:<id>] [user]
+//   user: account whose project, files and email the job uses (default: the admin).
 //
 // Optional env RUNNER_JOB_OPTS (JSON, set by the server for item actions):
 //   { "promptFile": "path", "queue": true, "action": "evaluate", "itemKey": "..." }
@@ -25,8 +26,9 @@ import {
 } from '../lib/config.mjs';
 import { readdirSync } from 'node:fs';
 import { markdownToHtml, emailDocument } from '../lib/markdown.mjs';
+import { findUser, adminUser, userCfg } from '../lib/users.mjs';
 
-const [, , idArg = 'auto', requestArg = '', trigger = 'cli'] = process.argv;
+const [, , idArg = 'auto', requestArg = '', trigger = 'cli', userArg = ''] = process.argv;
 
 // cron starts with a nearly empty environment
 const home = process.env.HOME || homedir();
@@ -36,7 +38,10 @@ process.env.PATH = [
   '/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin',
 ].filter(Boolean).join(':');
 
-const cfg = loadConfig();
+const baseCfg = loadConfig();
+const jobUser = userArg ? findUser(baseCfg, userArg) : adminUser(baseCfg); // null before accounts exist
+if (userArg && !jobUser) throw new Error(`Unknown user: ${userArg}`);
+const cfg = userCfg(baseCfg, jobUser);
 if (cfg.envFile) loadEnvFile(cfg.envFile);
 
 const id = idArg === 'auto' ? newRunId() : idArg;
@@ -51,7 +56,7 @@ const promptFile = opts.promptFile
 const request = (requestArg || (cfg.presets[0] ?? 'run')).slice(0, 500);
 writeFileSync(join(dir, 'request.txt'), request + '\n');
 updateStatus(dir, {
-  id, request, trigger, state: 'queued', pid: process.pid, waiting: Boolean(opts.queue),
+  id, user: jobUser?.name ?? null, request, trigger, state: 'queued', pid: process.pid, waiting: Boolean(opts.queue),
   action: opts.action ?? null, itemKey: opts.itemKey ?? null, createdAt: new Date().toISOString(),
 });
 

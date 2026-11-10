@@ -153,6 +153,9 @@
   dialog.big[open] { display: flex; flex-direction: column; }
   dialog.big .dlg-body { flex: 1; border-top: 1px solid var(--border); padding-top: 12px; }
   button.x { background: none; border: 0; color: var(--muted); font-size: 22px; line-height: 1; cursor: pointer; padding: 0 4px; }
+  .narrow { max-width: 520px; }
+  .fields label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 4px; }
+  .fields input { font: inherit; width: 100%; box-sizing: border-box; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); }
   @media (max-width: 600px) {
     dialog.big { width: 100vw; height: 100vh; max-width: 100vw; max-height: 100vh; border-radius: 0; margin: 0; }
   }
@@ -264,6 +267,55 @@
       </div>
     </div>
   </section>
+
+  <section id="login-view" hidden>
+    <div class="card narrow">
+      <h2>Log in</h2>
+      <form id="login-form" class="fields">
+        <label for="login-name">Name</label>
+        <input id="login-name" autocomplete="username" autocapitalize="none" required>
+        <label for="login-pw">Password</label>
+        <input id="login-pw" type="password" autocomplete="current-password" required>
+        <div class="row"><button class="primary" type="submit" style="margin-left:auto">Log in</button></div>
+        <div class="error" id="login-error"></div>
+      </form>
+    </div>
+  </section>
+
+  <section id="account-view" hidden>
+    <div class="card narrow">
+      <h2>Account <span class="muted" id="acc-name"></span></h2>
+      <form id="email-form" class="fields">
+        <label for="acc-email">Email for results</label>
+        <input id="acc-email" type="email" autocomplete="email" placeholder="leave empty to get no email">
+        <div class="row"><span class="muted" id="email-msg"></span><button class="primary" type="submit" style="margin-left:auto">Save email</button></div>
+      </form>
+      <form id="pw-form" class="fields">
+        <label for="acc-pw-cur">Current password</label>
+        <input id="acc-pw-cur" type="password" autocomplete="current-password" required>
+        <label for="acc-pw-new">New password (8+ characters)</label>
+        <input id="acc-pw-new" type="password" autocomplete="new-password" minlength="8" required>
+        <div class="row"><span class="muted" id="pw-msg"></span><button class="ghost" type="submit" style="margin-left:auto">Change password</button></div>
+      </form>
+      <div class="row"><button class="ghost" id="logout" type="button" style="margin-left:auto">Log out</button></div>
+    </div>
+    <div class="card narrow" id="users-card" hidden>
+      <h2>Users</h2>
+      <ul class="runs" id="users"></ul>
+      <form id="user-form" class="fields">
+        <h3 style="margin:14px 0 0">Add a user</h3>
+        <p class="muted" style="margin:4px 0 0;font-size:14px">They get their own copy of the template project (profile, CV, rules, portals…) and their own history.</p>
+        <label for="nu-name">Name (a-z, 0-9, _ or -)</label>
+        <input id="nu-name" autocapitalize="none" pattern="[a-z0-9_\-]{2,32}" required>
+        <label for="nu-email">Email</label>
+        <input id="nu-email" type="email">
+        <label for="nu-pw">Temporary password (8+ characters)</label>
+        <input id="nu-pw" type="text" minlength="8" required>
+        <div class="row"><span class="muted" id="nu-msg"></span><button class="primary" type="submit" style="margin-left:auto">Add user</button></div>
+        <div class="error" id="nu-error"></div>
+      </form>
+    </div>
+  </section>
 </main>
 
 <dialog id="note-dialog">
@@ -307,12 +359,94 @@ let timer = null;
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
+const store = {
+  get: () => { try { return localStorage.getItem('runner-token') || ''; } catch { return ''; } },
+  set: (t) => { try { t ? localStorage.setItem('runner-token', t) : localStorage.removeItem('runner-token'); } catch {} },
+};
+
 async function api(path, opts = {}) {
-  const res = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...opts });
+  const res = await fetch(path, { headers: { 'Content-Type': 'application/json', 'X-Runner-Token': store.get() }, ...opts });
   const data = await res.json().catch(() => ({}));
+  if (res.status === 401 && path !== '/api/login') showLogin();
   if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
   return data;
 }
+
+// ── login + account ────────────────────────────────────────────────────────
+
+let needLogin = false;
+
+function showLogin() {
+  needLogin = true;
+  clearTimeout(timer);
+  for (const id of ['list-view', 'detail-view', 'rules-view', 'account-view']) $(id).hidden = true;
+  $('tabs').hidden = true;
+  $('login-view').hidden = false;
+  $('login-name').focus();
+}
+
+$('login-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  $('login-error').textContent = '';
+  try {
+    const { token } = await api('/api/login', { method: 'POST', body: JSON.stringify({ name: $('login-name').value, password: $('login-pw').value }) });
+    store.set(token);
+    location.reload();
+  } catch (err) {
+    $('login-error').textContent = err.message;
+  }
+});
+
+$('logout').addEventListener('click', async () => {
+  await api('/api/logout', { method: 'POST' }).catch(() => {});
+  store.set('');
+  location.hash = '';
+  location.reload();
+});
+
+async function showAccount() {
+  const me = await api('/api/me');
+  $('acc-name').textContent = `· ${me.name}${me.admin ? ' (admin)' : ''}`;
+  if (document.activeElement !== $('acc-email')) $('acc-email').value = me.email || '';
+  $('users-card').hidden = !me.admin;
+  if (me.admin) {
+    const { users } = await api('/api/users');
+    $('users').innerHTML = users.map((u) => `<li class="run"><span class="req">${esc(u.name)}${u.admin ? ' <span class="tag">admin</span>' : ''}</span><span class="when">${esc(u.email || 'no email')}</span></li>`).join('');
+  }
+}
+
+const formMsg = (id, text) => { $(id).textContent = text; };
+
+$('email-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  try {
+    const me = await api('/api/me', { method: 'PUT', body: JSON.stringify({ email: $('acc-email').value.trim() }) });
+    appCfg.mail = me.email;
+    $('hint').textContent = `timeout ${appCfg.timeout}${me.email ? ` · result emailed to ${me.email}` : ''}`;
+    formMsg('email-msg', me.email ? 'Saved.' : 'Saved. Results will not be emailed.');
+  } catch (err) { formMsg('email-msg', err.message); }
+});
+
+$('pw-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  try {
+    await api('/api/me', { method: 'PUT', body: JSON.stringify({ currentPassword: $('acc-pw-cur').value, password: $('acc-pw-new').value }) });
+    $('pw-form').reset();
+    formMsg('pw-msg', 'Password changed.');
+  } catch (err) { formMsg('pw-msg', err.message); }
+});
+
+$('user-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  $('nu-error').textContent = '';
+  formMsg('nu-msg', '');
+  try {
+    const u = await api('/api/users', { method: 'POST', body: JSON.stringify({ name: $('nu-name').value.trim(), email: $('nu-email').value.trim(), password: $('nu-pw').value }) });
+    $('user-form').reset();
+    formMsg('nu-msg', `Added ${u.name}. Give them the name and temporary password.`);
+    showAccount();
+  } catch (err) { $('nu-error').textContent = err.message; }
+});
 
 function fmtDate(iso) {
   if (!iso) return '';
@@ -353,9 +487,14 @@ async function loadConfig() {
     a.textContent = g.label;
     $('tabs').appendChild(a);
   }
+  const acc = document.createElement('a');
+  acc.href = '#/account';
+  acc.id = 'tab-account';
+  acc.textContent = cfg.user?.name || 'Account';
+  $('tabs').appendChild(acc);
   highlightTab();
   $('project').textContent = cfg.project;
-  $('hint').textContent = `timeout ${cfg.timeout}${cfg.mail ? ' · result emailed' : ''}`;
+  $('hint').textContent = `timeout ${cfg.timeout}${cfg.mail ? ` · result emailed to ${cfg.mail}` : ''}`;
   if (cfg.pasteAction) {
     $('paste-eval').textContent = cfg.pasteAction.label;
     $('paste-eval').hidden = false;
@@ -382,6 +521,7 @@ async function refreshList(historyPage = false) {
       <span class="when">${esc(fmtDate(r.startedAt || r.createdAt))}</span>
       <span class="src">
         ${badge(r.state)}
+        ${appCfg.user?.admin && r.user ? `<span class="tag">👤 ${esc(r.user)}</span>` : ''}
         <span class="tag">${esc(r.trigger || 'web')}</span>
         ${r.summary && r.request ? `<span class="tag">“${esc(r.request)}”</span>` : ''}
         ${r.durationSec != null ? `<span class="tag">${esc(fmtDuration(r.durationSec))}</span>` : ''}
@@ -759,11 +899,21 @@ let lastHash = location.hash;
 
 function highlightTab() {
   const group = location.hash.match(/^#\/edit\/([\w-]+)/)?.[1];
-  $('tabs').querySelectorAll('a').forEach((a) => a.classList.toggle('on', group ? a.dataset.group === group : a.id === 'tab-runs'));
+  const want = location.hash === '#/account' ? 'tab-account' : 'tab-runs';
+  $('tabs').querySelectorAll('a').forEach((a) => a.classList.toggle('on', group ? a.dataset.group === group : a.id === want));
 }
 
 async function route() {
   clearTimeout(timer);
+  if (needLogin) return;
+  const account = location.hash === '#/account';
+  $('account-view').hidden = !account;
+  if (account) {
+    for (const id of ['list-view', 'detail-view', 'rules-view']) $(id).hidden = true;
+    highlightTab();
+    showAccount().catch((err) => formMsg('email-msg', err.message));
+    return;
+  }
   const run = location.hash.match(/^#\/run\/(\d{8}-\d{6})$/);
   if (/^#\/rules/.test(location.hash)) { location.replace('#/edit/rules'); return; } // old links
   const edit = location.hash.match(/^#\/edit\/([\w-]+)(?:\/(\d+))?$/);
@@ -805,7 +955,8 @@ window.addEventListener('hashchange', () => {
   route();
 });
 document.addEventListener('visibilitychange', () => { if (!document.hidden && $('rules-view').hidden) route(); });
-loadConfig().catch((err) => { $('form-error').textContent = err.message; }).finally(route);
+if (!store.get()) showLogin();
+else loadConfig().catch((err) => { $('form-error').textContent = err.message; }).finally(route);
 </script>
 </body>
 </html>
