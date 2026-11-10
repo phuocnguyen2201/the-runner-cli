@@ -217,12 +217,16 @@
   button.link { background: none; border: 0; padding: 0; font: inherit; cursor: pointer; text-decoration: underline; }
   button.link.rm { color: var(--muted) !important; text-decoration: none; margin-left: 6px; }
   @media (max-width: 600px) { ol.timeline > li { grid-template-columns: 18px 1fr; } ol.timeline .what { grid-column: 2; } }
-  .preset { display: inline-flex; align-items: stretch; border: 1px solid var(--border); background: var(--surface-2); border-radius: 999px; overflow: hidden; }
-  .preset:hover { border-color: var(--accent); }
-  .preset .chip { border: 0; border-radius: 0; background: none; padding-right: 6px; }
-  .preset .chip.has-rule::after { content: ' ·'; color: var(--accent); font-weight: 700; }
-  .preset button.dots { width: 26px; height: auto; border: 0; border-left: 1px solid var(--border); border-radius: 0; font-size: 15px; }
   .chip.add { border-style: dashed; background: none; color: var(--muted); }
+  #presets-panel { width: min(560px, calc(100vw - 32px)); }
+  ul.preset-items { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; max-height: 40vh; overflow-y: auto; }
+  ul.preset-items li { display: flex; align-items: center; gap: 6px; border: 1px solid var(--border); border-radius: 10px; padding: 4px; }
+  ul.preset-items li:hover { border-color: var(--accent); }
+  ul.preset-items .use { flex: 1; min-width: 0; text-align: left; background: none; border: 0; padding: 6px 8px; font: inherit; color: var(--text); cursor: pointer; }
+  ul.preset-items .use small { display: block; color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  ul.preset-items .ghost { font-size: 12px; padding: 4px 10px; }
+  ul.preset-items .empty { border: 0; color: var(--muted); padding: 6px 0; }
+  #preset-new textarea { width: 100%; box-sizing: border-box; }
   dialog input[type=text] { width: 100%; font: inherit; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); }
   dialog textarea.rule { min-height: 160px; font: 13px/1.5 var(--mono); }
   dialog .hint { font-size: 12px; color: var(--muted); margin-top: 4px; }
@@ -457,6 +461,27 @@
 
 <div class="menu" id="menu" role="menu" hidden></div>
 
+<dialog id="presets-panel">
+  <div class="dlg-head"><h3>Presets</h3><button class="x" type="button" onclick="this.closest('dialog').close()" aria-label="Close">×</button></div>
+  <div class="dlg-body">
+    <p class="hint" style="margin:0 0 8px">Your saved requests. Choose one to put it in the New job box.</p>
+    <ul class="preset-items" id="preset-items"></ul>
+    <form id="preset-new" class="fields">
+      <h3 style="margin:16px 0 0;font-size:15px">Create new preset</h3>
+      <label for="pn-request">Request</label>
+      <input id="pn-request" maxlength="500" required placeholder="e.g. scan frontend jobs in Helsinki">
+      <label for="pn-rule">Search rule (optional)</label>
+      <textarea id="pn-rule" class="rule" maxlength="5000" placeholder="e.g. Only search LinkedIn and Duunitori. Keywords: React, TypeScript. Location: Helsinki, remote Finland."></textarea>
+      <div class="hint" id="pn-rule-hint"></div>
+      <div class="error" id="pn-error"></div>
+      <div class="row">
+        <button class="ghost" type="submit" value="save" style="margin-left:auto">Save</button>
+        <button class="primary" type="submit" value="use">Save &amp; use</button>
+      </div>
+    </form>
+  </div>
+</dialog>
+
 <dialog id="preset-dialog">
   <form method="dialog" id="preset-form">
     <div class="dlg-head"><h3 id="preset-title">Preset</h3><button class="x" value="cancel" aria-label="Close" formnovalidate>×</button></div>
@@ -675,31 +700,60 @@ async function loadPresets() {
   } catch (err) { console.error(err); }
 }
 
+// The New job card shows one Presets button; the panel lists the user's presets (use / edit / delete)
+// and has a form to create a new one.
 function renderPresets() {
-  $('presets').innerHTML = presetList.map((p, i) => `<span class="preset">
-      <button type="button" class="chip ${p.rule ? 'has-rule' : ''}" data-i="${i}" title="${esc(p.rule ? `Rule: ${p.rule.slice(0, 200)}` : 'No search rule')}">${esc(p.request)}</button><button type="button" class="dots" data-i="${i}" aria-haspopup="menu" aria-expanded="false" title="Edit preset" aria-label="Preset options">⋯</button>
-    </span>`).join('') + '<button type="button" class="chip add" id="preset-add">+ Preset</button>';
+  $('presets').innerHTML = `<button type="button" class="chip" id="presets-open" aria-haspopup="dialog">☰ Presets (${presetList.length})</button>`;
+  $('preset-items').innerHTML = presetList.length
+    ? presetList.map((p, i) => `<li>
+        <button type="button" class="use" data-i="${i}" title="Use this preset">${esc(p.request)}${p.rule ? `<small>Rule: ${esc(p.rule)}</small>` : ''}</button>
+        <button type="button" class="ghost" data-edit="${i}">Edit</button>
+        <button type="button" class="ghost" data-del="${i}" aria-label="Delete ${esc(p.request)}">Delete</button>
+      </li>`).join('')
+    : '<li class="empty">No presets yet. Create your first one below.</li>';
+}
+
+function usePreset(request) {
+  $('request').value = request;
+  $('presets-panel').close();
+  $('request').focus();
 }
 
 $('presets').addEventListener('click', (e) => {
-  if (e.target.id === 'preset-add') return openPresetDialog(null, presetList.length);
-  const i = Number(e.target.dataset.i);
-  const p = presetList[i];
-  if (!p) return;
-  if (e.target.classList.contains('dots')) {
-    return openMenu(e.target, `preset:${i}`, [
-      { cmd: 'edit', label: 'Update' },
-      { cmd: 'insert', label: 'Insert new after' },
-      'sep',
-      { cmd: 'delete', label: 'Delete' },
-    ], (cmd) => {
-      if (cmd === 'edit') openPresetDialog(i);
-      else if (cmd === 'insert') openPresetDialog(null, i + 1);
-      else deletePreset(i);
-    });
+  if (e.target.id !== 'presets-open') return;
+  $('preset-new').reset();
+  $('pn-error').textContent = '';
+  $('pn-rule').disabled = !appCfg.promptFile;
+  $('pn-rule-hint').textContent = appCfg.promptFile
+    ? `Saved into ${appCfg.promptFile} under “Preset rules”. Claude follows it when the request is this preset.`
+    : 'No promptFile is configured, so rules cannot be saved.';
+  $('presets-panel').showModal();
+});
+
+$('preset-items').addEventListener('click', (e) => {
+  const btn = e.target.closest('button');
+  if (!btn) return;
+  if (btn.dataset.edit != null) return openPresetDialog(Number(btn.dataset.edit));
+  if (btn.dataset.del != null) return deletePreset(Number(btn.dataset.del));
+  const p = presetList[Number(btn.dataset.i)];
+  if (p) usePreset(p.request);
+});
+
+$('preset-new').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const use = e.submitter?.value === 'use';
+  const body = { request: $('pn-request').value.trim(), rule: $('pn-rule').value.trim() };
+  $('pn-error').textContent = '';
+  if (!body.request) { $('pn-error').textContent = 'Request text is required.'; return; }
+  try {
+    const { presets } = await api('/api/presets', { method: 'POST', body: JSON.stringify({ ...body, at: presetList.length }) });
+    presetList = presets;
+    renderPresets();
+    $('preset-new').reset();
+    if (use) usePreset(body.request);
+  } catch (err) {
+    $('pn-error').textContent = err.message;
   }
-  $('request').value = p.request;
-  $('request').focus();
 });
 
 // index: preset to update, or null to insert at `at`.
