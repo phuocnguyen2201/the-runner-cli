@@ -384,6 +384,20 @@
         <div class="row"><button class="primary" type="submit" style="margin-left:auto">Log in</button></div>
         <div class="error" id="login-error"></div>
       </form>
+      <p class="muted" style="margin:14px 0 0;font-size:14px">No account? <button class="link" type="button" id="show-register">Create one</button></p>
+    </div>
+    <div class="card narrow" id="register-card" hidden>
+      <h2>Create account</h2>
+      <form id="register-form" class="fields">
+        <label for="reg-name">Name (a-z, 0-9, _ or -)</label>
+        <input id="reg-name" autocomplete="username" autocapitalize="none" pattern="[a-z0-9_\-]{2,32}" required>
+        <label for="reg-email">Email for results</label>
+        <input id="reg-email" type="email" autocomplete="email">
+        <label for="reg-pw">Password (8+ characters)</label>
+        <input id="reg-pw" type="password" autocomplete="new-password" minlength="8" required>
+        <div class="row"><button class="primary" type="submit" style="margin-left:auto">Create account</button></div>
+        <div class="error" id="register-error"></div>
+      </form>
     </div>
   </section>
 
@@ -493,7 +507,7 @@ const store = {
 async function api(path, opts = {}) {
   const res = await fetch(path, { headers: { 'Content-Type': 'application/json', 'X-Runner-Token': store.get() }, ...opts });
   const data = await res.json().catch(() => ({}));
-  if (res.status === 401 && path !== '/api/login') showLogin();
+  if (res.status === 401 && !['/api/login', '/api/register'].includes(path)) showLogin();
   if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
   return data;
 }
@@ -520,6 +534,23 @@ $('login-form').addEventListener('submit', async (e) => {
     location.reload();
   } catch (err) {
     $('login-error').textContent = err.message;
+  }
+});
+
+$('show-register').addEventListener('click', () => {
+  $('register-card').hidden = false;
+  $('reg-name').focus();
+});
+
+$('register-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  $('register-error').textContent = '';
+  try {
+    const { token } = await api('/api/register', { method: 'POST', body: JSON.stringify({ name: $('reg-name').value.trim(), email: $('reg-email').value.trim(), password: $('reg-pw').value }) });
+    store.set(token);
+    location.reload();
+  } catch (err) {
+    $('register-error').textContent = err.message;
   }
 });
 

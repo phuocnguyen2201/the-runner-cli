@@ -26,6 +26,7 @@
   "runsDir": "./runs",
   "usersDir": "./users",
   "userTemplateDir": "/home/pi/runner-template",
+  "signup": true,
   "mail": {
     "to": "you@example.com",
     "from": null,

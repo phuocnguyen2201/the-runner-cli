@@ -119,7 +119,9 @@ Relative paths are resolved from the repo folder. Set `RUNNER_CONFIG=/path/to/co
 
 ## Accounts
 
-Everyone logs in with a name and password. There is no public sign-up: the admin adds users.
+Everyone logs in with a name and password. People can create their own account with **Create one** on the login page, and the admin can also add users. Set `"signup": false` in `config.json` to close sign-up.
+
+**The first account becomes the admin**: on an install with no accounts, the first one created (by sign-up or the CLI) is the admin and owns all existing runs. To be sure it's you, create it from the shell before you share the URL:
 
 ```bash
 node bin/user.mjs add phuoc --admin            # once; asks for a password, takes mail.to as the email

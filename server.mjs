@@ -51,6 +51,7 @@ const server = createServer(async (req, res) => {
       return send(res, 200, readFileSync(INDEX), 'text/html; charset=utf-8');
     }
     if (req.method === 'POST' && path === '/api/login') return await login(req, res);
+    if (req.method === 'POST' && path === '/api/register') return await register(req, res);
     if (!path.startsWith('/api/')) return json(res, 404, { error: 'not found' });
 
     const token = req.headers['x-runner-token'];
@@ -171,6 +172,20 @@ async function login(req, res) {
   const u = findUser(cfg, String(body.name ?? '').trim().toLowerCase());
   if (!u || !verifyPassword(body.password, u)) return json(res, 401, { error: 'wrong name or password' });
   json(res, 200, { token: createSession(cfg, u.name), user: { name: u.name, admin: Boolean(u.admin), email: u.email || null } });
+}
+
+// Self sign-up (turn off with "signup": false). On an install with no accounts, the first one becomes the admin.
+async function register(req, res) {
+  if (cfg.signup === false) return json(res, 403, { error: 'Sign-up is closed. Ask the admin for an account.' });
+  const body = await readBody(req);
+  const admin = !hasUsers(cfg);
+  const u = createUser(cfg, {
+    name: String(body.name ?? '').trim().toLowerCase(),
+    email: String(body.email ?? '').trim() || null,
+    password: body.password,
+    admin,
+  });
+  json(res, 201, { token: createSession(cfg, u.name), user: u });
 }
 
 async function updateMe(req, res, user) {
