@@ -178,7 +178,7 @@ It also reads a career-ops-style tracker in `projectDir` (read-only; the runner 
 - The **⋯** button on each row has:
   - **Ghosted** / **Rejected**: records the date and an optional note (pick it again to change the date). *Clear ghosted/rejected* removes it.
   - **Revise…**: the company came back (e.g. they couldn't find the right candidate). Adds a dated event; there can be several, and each can be removed in Details.
-- The Outcome column shows the current stage. A revision dated on or after the ghosted/rejected date re-opens the item (shown as *Revised*); ghosted/rejected items are dimmed. The Status filter and *Outcome date* sort use this stage.
+- The Outcome column shows the current stage. A revision dated on or after the ghosted/rejected date re-opens the item (shown as *Revised*); ghosted/rejected items are dimmed and always listed after the others, whatever the sort. The Status filter and *Outcome date* sort use this stage.
 - Stored in `runs/items.json` as `_status` and `_revisions`.
 
 ## Presets

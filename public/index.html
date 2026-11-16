@@ -1513,7 +1513,9 @@ function filteredItems() {
   });
   const key = $('f-sort').value || 'scanned';
   const dir = sortDir === 'asc' ? 1 : -1;
+  const sunk = (x) => ['ghosted', 'rejected'].includes(stageOf(x)); // ghosted/rejected always go last
   return list.sort((a, b) => {
+    if (sunk(a) !== sunk(b)) return sunk(a) ? 1 : -1;
     const va = sortValue(a, key), vb = sortValue(b, key);
     if (va == null && vb == null) return 0;
     if (va == null) return 1; // empty values always last
